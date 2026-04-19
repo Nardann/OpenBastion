@@ -16,18 +16,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/package*.json ./
-COPY --from=build /app/prisma ./prisma
+# Create non-root user for security first
+RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
+
+# Copy files with correct ownership from the start
+COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
+COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=build --chown=nestjs:nodejs /app/package*.json ./
+COPY --from=build --chown=nestjs:nodejs /app/prisma ./prisma
 
 # Copy entrypoint script
-COPY entrypoint.sh /app/entrypoint.sh
+COPY --chown=nestjs:nodejs entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
-
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
-RUN chown -R nestjs:nodejs /app
 
 EXPOSE ${BACKEND_PORT}
 
