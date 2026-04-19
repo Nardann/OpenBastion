@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #4F46E5;
+  --color-primary-hover: #4338CA;
+  
+  --color-background-app: var(--bg-app);
+  --color-background-surface: var(--bg-surface);
+  --color-text-main: var(--text-main);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-light: var(--border-light);
+  --color-table-header: var(--table-header);
+  
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-neutral: #9CA3AF;
+}
+
+:root {
+  --bg-app: #F9FAFB;
+  --bg-surface: #FFFFFF;
+  --text-main: #111827;
+  --text-secondary: #6B7280;
+  --border-light: #E5E7EB;
+  --table-header: #F3F4F6;
+  color-scheme: light;
+}
+
+.dark {
+  --bg-app: #0F172A;
+  --bg-surface: #1E293B;
+  --text-main: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --border-light: #334155;
+  --table-header: #1E293B;
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-app);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
+
+/* Base UI Components */
+.card-subtle {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.btn-primary {
+  background-color: #4F46E5;
+  color: #FFFFFF !important;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary:hover {
+  background-color: #4338CA;
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  color: var(--text-main);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background-color: var(--table-header);
+  border-color: var(--text-secondary);
+}
+
+.form-input {
+  background-color: var(--bg-surface);
+  color: var(--text-main);
+  height: 40px;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  padding: 0 12px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  width: 100%;
+}
+
+/* Fix for inputs with left icons */
+.input-with-icon {
+  padding-left: 40px !important;
+}
+
+.form-input:focus {
+  border-color: #4F46E5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.pill-badge {
+  @apply rounded-full font-bold uppercase;
+}
+
+.table-header {
+  background-color: var(--table-header);
+  color: var(--text-secondary);
+  @apply text-[10px] uppercase tracking-wider font-bold;
+}
+
+/* Force dark for terminal elements */
+.terminal-theme {
+  --bg-app: #000000;
+  --bg-surface: #111111;
+  --text-main: #FFFFFF;
+  --text-secondary: #AAAAAA;
+  --border-light: #333333;
+}

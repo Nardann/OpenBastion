@@ -1,0 +1,34 @@
+# Build Stage for Frontend
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+# Copy only package.json first for better caching
+COPY client/package*.json ./
+RUN npm install --legacy-peer-deps
+# Copy all source files from client directory
+COPY client/ ./
+
+# Build for production
+RUN npm run build
+
+# Stage 2: Serve with Nginx
+FROM nginx:alpine
+
+# Install openssl for self-signed cert generation
+RUN apk add --no-cache openssl
+
+# Copy built files from build stage to nginx web root
+COPY --from=build /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration template
+COPY --from=build /app/nginx.conf /app/nginx.conf.template
+
+# Copy entrypoint script
+COPY client/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 80
+EXPOSE 443
+
+ENTRYPOINT ["/entrypoint.sh"]

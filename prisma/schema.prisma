@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum AuthMethod {
+  LOCAL
+  LDAP
+  OIDC
+}
+
+enum AccessLevel {
+  OWNER    // Full management of the machine entry
+  OPERATOR // Can connect and type in terminal
+  VIEWER   // Can only view live session or recordings
+}
+
+enum Protocol {
+  SSH
+  RDP
+  VNC
+}
+
+enum AuthProviderType {
+  LDAP
+  OIDC
+}
+
+model User {
+  id                     String    @id @default(uuid())
+  email                  String    @unique
+  username               String?   @unique
+  passwordHash           String?   // Local Argon2
+  role                   Role      @default(USER)
+  authMethod             AuthMethod @default(LOCAL)
+  externalId             String?   // Sub for OIDC, DN for LDAP
+  tokenVersion           Int       @default(0)
+  requiresPasswordChange Boolean   @default(false)
+  otpSecret              String?   // Secret TOTP actif (otplib)
+  pendingOtpSecret      String?   // Secret TOTP en attente de validation
+  isOtpEnabled           Boolean   @default(false)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  
+  groups                 Group[]    @relation("UserGroups")
+  permissions            Permission[]
+  auditLogs             AuditLog[]
+
+  @@unique([externalId, authMethod])
+}
+
+model Group {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users       User[]    @relation("UserGroups")
+  permissions Permission[]
+}
+
+model Permission {
+  id          String      @id @default(uuid())
+  userId      String?
+  groupId     String?
+  machineId   String?
+  machineGroupId String?
+  level       AccessLevel @default(OPERATOR)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group       Group?      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  machine     Machine?    @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  machineGroup MachineGroup? @relation(fields: [machineGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, machineId])
+  @@unique([groupId, machineId])
+  @@unique([userId, machineGroupId])
+  @@unique([groupId, machineGroupId])
+}
+
+model Machine {
+  id          String    @id @default(uuid())
+  name        String
+  ip          String
+  port        Int
+  protocol    Protocol  @default(SSH)
+  description String?
+  sshFingerprint String // Base64 SHA256 fingerprint - OBLIGATOIRE
+  
+  // SECURITY FIX: Group machines for better access control
+  machineGroupId String?
+  machineGroup   MachineGroup? @relation(fields: [machineGroupId], references: [id], onDelete: SetNull)
+
+  // Protocol filtering
+  allowTunneling Boolean   @default(false)
+  allowRebound    Boolean   @default(false)
+  allowCopyPaste  Boolean   @default(false)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  secret      Secret?
+  permissions Permission[]
+
+  @@index([ip, port])
+}
+
+model MachineGroup {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  machines    Machine[]
+  permissions Permission[]
+}
+
+model Secret {
+  id                 String  @id @default(uuid())
+  machineId          String  @unique
+  machine            Machine @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  // Format: iv:ciphertext:tag (hex)
+  encryptedUsername  String
+  encryptedPassword  String?
+  encryptedPrivateKey String?
+  updatedAt          DateTime @updatedAt
+}
+
+model AuthProvider {
+  id          String           @id @default(uuid())
+  name        String           @unique
+  type        AuthProviderType
+  enabled     Boolean          @default(true)
+  config      Json             // Strategy specific config (URL, ClientID, etc.)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  userSnapshot Json?   // Snapshot {email, username, role} au moment de l'action
+  action      String
+  category    String?
+  authMethod  AuthMethod?
+  ipAddress   String?
+  timestamp   DateTime @default(now())
+  metadata    Json?
+
+  @@index([category])
+  @@index([timestamp(sort: Desc)])
+  @@index([userId])
+}
+
+model BlacklistedToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}

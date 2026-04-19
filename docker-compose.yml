@@ -1,0 +1,67 @@
+networks:
+  frontend-net:
+  backend-net:
+    internal: true
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: bastion-postgres
+    restart: always
+    networks:
+      - backend-net
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data_v17
+    volumes:
+      - ./pg_data_new:/var/lib/postgresql
+      - ./scripts/init-db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: bastion-backend
+    restart: always
+    networks:
+      - backend-net
+      - frontend-net
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      VAULT_KEY: ${VAULT_KEY}
+      VAULT_SALT: ${VAULT_SALT} # OBLIGATOIRE — générer avec: openssl rand -hex 16
+      BACKEND_PORT: ${BACKEND_PORT:-3000}
+      NODE_ENV: production
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,https://localhost}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      RECORDINGS_PATH: /var/lib/bastion/recordings
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: client/Dockerfile.frontend
+    container_name: bastion-frontend
+    restart: always
+    networks:
+      - frontend-net
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_HTTPS_PORT:-443}:443"
+    environment:
+      BACKEND_PORT: ${BACKEND_PORT:-3000}
+    volumes:
+      - ./certs:/etc/nginx/ssl
+    depends_on:
+      - backend
