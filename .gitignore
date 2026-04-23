@@ -7,3 +7,5 @@ dist/
 certs/
 coverage/
 *.log
+.claude/
+pg_data_new/

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Server, Terminal as TerminalIcon, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon, FolderOpen, X } from 'lucide-react';
+import { Server, Terminal as TerminalIcon, Monitor, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon, FolderOpen, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 
@@ -201,11 +201,21 @@ const Dashboard: React.FC = () => {
                 )}
 
                 <Link
-                  to={`/session/${machine.id}`}
+                  to={
+                    machine.protocol === 'RDP'
+                      ? `/rdp/${machine.id}`
+                      : `/session/${machine.id}`
+                  }
                   className="btn-primary flex items-center justify-center gap-2 w-full text-sm"
                 >
-                  <TerminalIcon className="w-4 h-4" />
-                  Ouvrir la session
+                  {machine.protocol === 'RDP' ? (
+                    <Monitor className="w-4 h-4" />
+                  ) : (
+                    <TerminalIcon className="w-4 h-4" />
+                  )}
+                  {machine.protocol === 'RDP'
+                    ? 'Ouvrir le bureau distant'
+                    : 'Ouvrir la session'}
                 </Link>
               </div>
             ))}

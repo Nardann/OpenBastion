@@ -1,0 +1,115 @@
+# ============================================================================
+#  OpenBastion — guacd minimal image (RDP-only)
+# ----------------------------------------------------------------------------
+#  Build d'une instance de guacd (Apache Guacamole server) avec UNIQUEMENT
+#  le support RDP compile dedans. On ecarte explicitement SSH (deja implemente
+#  nativement via ssh2 cote backend), VNC, Telnet, Kubernetes et les outils
+#  auxiliaires (guaclog, guacenc) pour minimiser l'empreinte disque et RAM.
+#
+#  Resultat attendu : image runtime <= ~90 MB, un seul binaire expose guacd.
+#  Ecoute en TCP sur 4822, bindee uniquement au reseau interne `backend-net`
+#  du docker-compose (aucun port publie sur l'hote).
+# ============================================================================
+
+ARG GUACAMOLE_VERSION=1.5.5
+
+# ---------------------------------------------------------------------------
+# Stage 1 : build
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim AS build
+
+ARG GUACAMOLE_VERSION
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config \
+        wget \
+        ca-certificates \
+        libcairo2-dev \
+        libpng-dev \
+        libjpeg62-turbo-dev \
+        libossp-uuid-dev \
+        libwebp-dev \
+        libpango1.0-dev \
+        libfreerdp2-dev \
+        libwinpr2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+RUN wget -O guacamole-server.tar.gz \
+        "https://archive.apache.org/dist/guacamole/${GUACAMOLE_VERSION}/source/guacamole-server-${GUACAMOLE_VERSION}.tar.gz" \
+    && tar -xzf guacamole-server.tar.gz
+
+WORKDIR /tmp/guacamole-server-${GUACAMOLE_VERSION}
+
+# Configure minimal : RDP ON, tout le reste OFF.
+#   --with-rdp             : active le module RDP (requiert libfreerdp2)
+#   --without-ssh          : pas de SSH (OpenBastion gere deja SSH via ssh2)
+#   --without-vnc          : pas de VNC
+#   --without-telnet       : pas de Telnet
+#   --without-kubernetes   : pas de protocole Kubernetes
+#   --disable-guacenc      : pas d'encodage video des sessions
+#   --disable-guaclog      : pas de replay logs SSH
+#   Absence des headers pulseaudio => pas de redirection audio (desire).
+RUN ./configure \
+        --prefix=/opt/guacamole \
+        --with-rdp \
+        --without-ssh \
+        --without-vnc \
+        --without-telnet \
+        --without-kubernetes \
+        --disable-guacenc \
+        --disable-guaclog \
+    && make -j"$(nproc)" \
+    && make install \
+    && strip /opt/guacamole/sbin/guacd || true \
+    && find /opt/guacamole/lib -name '*.so*' -exec strip --strip-unneeded {} + || true
+
+# ---------------------------------------------------------------------------
+# Stage 2 : runtime (minimal)
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.title="OpenBastion guacd (RDP-only)" \
+      org.opencontainers.image.description="Apache Guacamole server compiled with RDP support only" \
+      org.opencontainers.image.source="https://github.com/openbastion"
+
+# Dependances runtime uniquement. On NE livre pas libssh2, libvncclient,
+# libtelnet, libpulse, libkubernetes etc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libcairo2 \
+        libpng16-16 \
+        libjpeg62-turbo \
+        libossp-uuid16 \
+        libwebp7 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libfreerdp2-2 \
+        libfreerdp-client2-2 \
+        libwinpr2-2 \
+        netcat-openbsd \
+    && apt-get purge -y --auto-remove \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /var/log/apt/*
+
+COPY --from=build /opt/guacamole /opt/guacamole
+
+RUN echo "/opt/guacamole/lib" > /etc/ld.so.conf.d/guacamole.conf \
+    && ldconfig \
+    && groupadd -r guacd -g 1001 \
+    && useradd -r -g guacd -u 1001 -s /sbin/nologin guacd
+
+USER guacd
+
+EXPOSE 4822
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD nc -z 127.0.0.1 4822 || exit 1
+
+# -b 0.0.0.0 : bind all interfaces (container isole sur backend-net)
+# -L info    : niveau de log raisonnable
+# -f         : foreground (requis pour Docker)
+ENTRYPOINT ["/opt/guacamole/sbin/guacd"]
+CMD ["-b", "0.0.0.0", "-L", "info", "-f"]

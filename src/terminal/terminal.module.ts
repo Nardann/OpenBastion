@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SshGateway } from './ssh.gateway';
+import { RdpGateway } from './rdp.gateway';
+import { RdpService } from './rdp.service';
 import { MachinesModule } from '../machines/machines.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule } from '../config/config.module';
@@ -18,6 +20,6 @@ import { SshModule } from './ssh.module';
     AuditModule,
     SshModule,
   ],
-  providers: [SshGateway],
+  providers: [SshGateway, RdpGateway, RdpService],
 })
 export class TerminalModule {}

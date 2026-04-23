@@ -2,9 +2,11 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { NotificationProvider } from './context/NotificationContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Terminal from './pages/Terminal';
+import RdpSession from './pages/RdpSession';
 import Profile from './pages/Profile';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './pages/AdminDashboard';
@@ -43,7 +45,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
       setError('');
       setElevating(true);
       try {
-        await sudo(sudoCode);
+        await sudo(sudoCode.trim() || undefined);
       } catch (err: any) {
         setError(err.response?.data?.message || 'Code invalide');
       } finally {
@@ -128,8 +130,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 const App: React.FC = () => {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <BrowserRouter>
+      <NotificationProvider>
+        <AuthProvider>
+          <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route
@@ -145,6 +148,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <Terminal />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rdp/:id"
+              element={
+                <ProtectedRoute>
+                  <RdpSession />
                 </ProtectedRoute>
               }
             />
@@ -173,9 +184,10 @@ const App: React.FC = () => {
               <Route path="auth" element={<AdminProviders />} />
               <Route path="sessions" element={<div className="p-8 font-sans"><h1 className="text-2xl font-bold text-text-main">Sessions Enregistrées</h1><p className="text-text-secondary mt-4">Le lecteur vidéo de sessions arrive prochainement.</p></div>} />
             </Route>
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </NotificationProvider>
     </ThemeProvider>
   );
 };

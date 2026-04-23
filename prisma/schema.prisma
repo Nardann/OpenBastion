@@ -30,6 +30,15 @@ enum Protocol {
   VNC
 }
 
+// RDP security mode (mapped to Guacamole's `security` parameter).
+// ANY lets the server negotiate; NLA is the modern Windows default.
+enum RdpSecurity {
+  ANY
+  RDP
+  TLS
+  NLA
+}
+
 enum AuthProviderType {
   LDAP
   OIDC
@@ -97,20 +106,33 @@ model Machine {
   port        Int
   protocol    Protocol  @default(SSH)
   description String?
-  sshFingerprint String // Base64 SHA256 fingerprint - OBLIGATOIRE
-  
+  // Empreinte de la cle hote SSH. Obligatoire pour les machines SSH,
+  // nullable pour les protocoles qui ne l'utilisent pas (RDP, VNC).
+  sshFingerprint String?
+
   // SECURITY FIX: Group machines for better access control
   machineGroupId String?
   machineGroup   MachineGroup? @relation(fields: [machineGroupId], references: [id], onDelete: SetNull)
 
-  // Protocol filtering
+  // Protocol filtering (s'applique a SSH : tunneling, agent forwarding)
   allowTunneling Boolean   @default(false)
   allowRebound    Boolean   @default(false)
+  // Clipboard bidirectionnel : SSH xterm ET RDP (disable-copy/paste Guacamole)
   allowCopyPaste  Boolean   @default(false)
+
+  // ---- RDP-specific settings ----
+  // Mode de securite negocie avec le serveur RDP.
+  // Par defaut NLA (Network Level Authentication) — standard sur Windows moderne.
+  rdpSecurity   RdpSecurity @default(NLA)
+  // Si true, n'interrompt pas la connexion sur un certificat TLS invalide
+  // (labs / lan uniquement ; deconseille en prod).
+  rdpIgnoreCert Boolean     @default(false)
+  // Domaine Active Directory (optionnel, pour auth AD)
+  rdpDomain     String?
 
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  
+
   secret      Secret?
   permissions Permission[]
 

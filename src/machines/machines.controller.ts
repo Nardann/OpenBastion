@@ -18,18 +18,33 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RequireAccessLevel } from '../rbac/access-level.decorator';
-import { Role, AccessLevel } from '@prisma/client';
+import { Role, AccessLevel, Protocol } from '@prisma/client';
 import { CreateMachineDto, UpdateMachineDto } from '../common/dto/security.dto';
 import { AssignMachineGroupDto } from '../common/dto/machine-groups.dto';
+import { ConfigService } from '../config/config.service';
+
+const RDP_PROTOCOLS = [Protocol.RDP, Protocol.VNC];
 
 @Controller('machines')
 @UseGuards(JwtAuthGuard, RolesGuard, RbacGuard)
 export class MachinesController {
-  constructor(private readonly machinesService: MachinesService) {}
+  constructor(
+    private readonly machinesService: MachinesService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private assertRdpAllowed(protocol?: string) {
+    if (protocol && (RDP_PROTOCOLS as string[]).includes(protocol) && !this.config.isRdpEnabled()) {
+      throw new BadRequestException(
+        'Le protocole RDP/VNC est désactivé. Activez ENABLE_RDP=true et relancez avec --profile rdp.',
+      );
+    }
+  }
 
   @Post()
   @Roles(Role.ADMIN)
   create(@Body() body: CreateMachineDto) {
+    this.assertRdpAllowed(body.protocol);
     const { username, password, privateKey, ...machineData } = body;
     const secretData: {
       username: string;
@@ -69,6 +84,7 @@ export class MachinesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateMachineDto,
   ) {
+    this.assertRdpAllowed(body.protocol);
     return this.machinesService.updateMachine(id, body);
   }
 

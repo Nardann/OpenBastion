@@ -1,15 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const backendPort = process.env.BACKEND_PORT || '3000';
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth': 'http://localhost:$BACKEND_PORT',
-      '/machines': 'http://localhost:$BACKEND_PORT',
+      '/auth': `http://localhost:${backendPort}`,
+      '/machines': `http://localhost:${backendPort}`,
       '/tunnel': {
-        target: 'ws://localhost:$BACKEND_PORT',
+        target: `ws://localhost:${backendPort}`,
         ws: true,
       },
     },
