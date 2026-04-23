@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { ShieldCheck, Mail, Lock, LogIn, Database, User as UserIcon, Sun, Moon, Globe } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useNotification } from '../context/NotificationContext';
 import api from '../services/api';
 
 interface AuthProvider {
@@ -24,6 +25,7 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const { login, loginOtp } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { notify } = useNotification();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -55,6 +57,12 @@ const Login: React.FC = () => {
         setRequiresOtp(true);
         setTempToken(res.tempToken || '');
       } else if (res.requiresPasswordChange) {
+        notify({
+          type: 'error',
+          title: 'Mot de passe périmé',
+          message: 'Veuillez changer votre mot de passe car celui-ci a périmé.',
+          duration: 10000,
+        });
         navigate('/profile');
       } else {
         navigate('/');
