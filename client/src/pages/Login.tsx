@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Mail, Lock, LogIn, Database, User as UserIcon, Sun, Moon } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, LogIn, Database, User as UserIcon, Sun, Moon, Globe } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import api from '../services/api';
+
+interface AuthProvider {
+  id: string;
+  name: string;
+  type: 'LDAP' | 'OIDC';
+  enabled: boolean;
+}
 
 const Login: React.FC = () => {
   const [identifier, setIdentifier] = useState('');
@@ -11,11 +19,25 @@ const Login: React.FC = () => {
   const [requiresOtp, setRequiresOtp] = useState(false);
   const [tempToken, setTempToken] = useState('');
   const [authMethod, setAuthMethod] = useState<'LOCAL' | 'LDAP'>('LOCAL');
+  const [providers, setProviders] = useState<AuthProvider[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, loginOtp } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    fetchProviders();
+  }, []);
+
+  const fetchProviders = async () => {
+    try {
+      const res = await api.get('/auth/providers');
+      setProviders(res.data as AuthProvider[]);
+    } catch (err) {
+      console.error('Failed to fetch auth providers', err);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +65,13 @@ const Login: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const handleOidcLogin = () => {
+    window.location.href = '/api/auth/oidc/login';
+  };
+
+  const isLdapEnabled = providers.some(p => p.type === 'LDAP' && p.enabled);
+  const isOidcEnabled = providers.some(p => p.type === 'OIDC' && p.enabled);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background-app p-4 relative overflow-hidden transition-colors duration-300">
@@ -76,22 +105,24 @@ const Login: React.FC = () => {
             {!requiresOtp ? (
               <>
                 {/* Auth Method Selector */}
-                <div className="flex p-1 bg-background-app rounded-lg border border-border-light">
-                  <button
-                    type="button"
-                    onClick={() => setAuthMethod('LOCAL')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-xs font-bold transition-all ${authMethod === 'LOCAL' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
-                  >
-                    <UserIcon size={14} /> LOCAL
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAuthMethod('LDAP')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-xs font-bold transition-all ${authMethod === 'LDAP' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
-                  >
-                    <Database size={14} /> LDAP / AD
-                  </button>
-                </div>
+                {isLdapEnabled && (
+                  <div className="flex p-1 bg-background-app rounded-lg border border-border-light">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMethod('LOCAL')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-[10px] font-bold transition-all ${authMethod === 'LOCAL' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
+                    >
+                      <UserIcon size={14} /> LOCAL
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMethod('LDAP')}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-[10px] font-bold transition-all ${authMethod === 'LDAP' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
+                    >
+                      <Database size={14} /> LDAP / AD
+                    </button>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">Identifiant</label>
@@ -163,6 +194,29 @@ const Login: React.FC = () => {
                 </>
               )}
             </button>
+
+            {isOidcEnabled && !requiresOtp && (
+              <div className="space-y-4">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border-light"></span>
+                  </div>
+                  <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
+                    <span className="bg-background-surface px-2 text-text-secondary">Ou utiliser SSO</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOidcLogin}
+                  className="w-full h-11 flex items-center justify-center gap-3 bg-background-app border border-border-light text-text-main text-xs font-bold rounded-lg hover:bg-background-surface hover:border-primary/50 transition-all shadow-sm"
+                >
+                  <Globe size={16} className="text-primary" />
+                  Se connecter avec OpenID Connect
+                </button>
+              </div>
+            )}
+
             {requiresOtp && (
               <button
                 type="button"

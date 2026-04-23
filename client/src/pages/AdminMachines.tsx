@@ -43,7 +43,11 @@ const AdminMachines = () => {
     allowTunneling: false,
     allowRebound: false,
     allowCopyPaste: false,
-    machineGroupId: ''
+    machineGroupId: '',
+    // RDP-only fields (ignored when protocol === 'SSH')
+    rdpSecurity: 'NLA' as 'ANY' | 'RDP' | 'TLS' | 'NLA',
+    rdpIgnoreCert: false,
+    rdpDomain: ''
   });
 
   const [groupFormData, setGroupFormData] = useState({
@@ -65,6 +69,7 @@ const AdminMachines = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedMachineToAdd, setSelectedMachineToAdd] = useState('');
+  const [rdpEnabled, setRdpEnabled] = useState(false);
 
   const fetchMachines = async () => {
     try {
@@ -98,8 +103,9 @@ const AdminMachines = () => {
     } catch (err) { console.error(err); }
   };
 
-  useEffect(() => { 
+  useEffect(() => {
     fetchData();
+    api.get('/features').then(res => setRdpEnabled((res.data as any).rdp === true)).catch(() => {});
   }, [activeTab]);
 
   // Handle Autocomplete Search
@@ -162,19 +168,26 @@ const AdminMachines = () => {
         port: Number(formData.port),
         protocol: formData.protocol,
         description: formData.description,
-        sshFingerprint: formData.sshFingerprint,
         username: formData.username,
         allowTunneling: formData.allowTunneling,
         allowRebound: formData.allowRebound,
         allowCopyPaste: formData.allowCopyPaste,
       };
-      
+
+      if (formData.protocol === 'SSH') {
+        submitData.sshFingerprint = formData.sshFingerprint;
+        if (formData.privateKey) submitData.privateKey = formData.privateKey;
+      } else if (formData.protocol === 'RDP') {
+        submitData.rdpSecurity = formData.rdpSecurity;
+        submitData.rdpIgnoreCert = formData.rdpIgnoreCert;
+        if (formData.rdpDomain) submitData.rdpDomain = formData.rdpDomain;
+      }
+
       if (formData.machineGroupId) {
         submitData.machineGroupId = formData.machineGroupId;
       }
 
       if (formData.password) submitData.password = formData.password;
-      if (formData.privateKey) submitData.privateKey = formData.privateKey;
 
       if (editingId) {
         await api.patch(`/machines/${editingId}`, submitData);
@@ -183,15 +196,16 @@ const AdminMachines = () => {
       }
       setIsModalOpen(false);
       setEditingId(null);
-      setFormData({ 
+      setFormData({
         name: '', ip: '', port: 22, protocol: 'SSH', description: '', sshFingerprint: '',
         username: '', password: '', privateKey: '',
         allowTunneling: true, allowRebound: true, allowCopyPaste: true,
-        machineGroupId: ''
+        machineGroupId: '',
+        rdpSecurity: 'NLA', rdpIgnoreCert: false, rdpDomain: ''
       });
       fetchData();
-    } catch (err: any) { 
-      alert(err.message || 'Erreur lors de l\'enregistrement'); 
+    } catch (err: any) {
+      alert(err.message || 'Erreur lors de l\'enregistrement');
     }
   };
 
@@ -245,7 +259,10 @@ const AdminMachines = () => {
       allowTunneling: machine.allowTunneling,
       allowRebound: machine.allowRebound,
       allowCopyPaste: machine.allowCopyPaste,
-      machineGroupId: machine.machineGroupId || ''
+      machineGroupId: machine.machineGroupId || '',
+      rdpSecurity: machine.rdpSecurity || 'NLA',
+      rdpIgnoreCert: !!machine.rdpIgnoreCert,
+      rdpDomain: machine.rdpDomain || ''
     });
     setIsModalOpen(true);
   };
@@ -361,7 +378,7 @@ const AdminMachines = () => {
       {activeTab === 'machines' && (
         <>
           <div className="flex justify-end">
-            <button onClick={() => { setEditingId(null); setFormData({ name: '', ip: '', port: 22, protocol: 'SSH', description: '', sshFingerprint: '', username: '', password: '', privateKey: '', allowTunneling: false, allowRebound: false, allowCopyPaste: false, machineGroupId: '' }); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2 text-sm shadow-sm">
+            <button onClick={() => { setEditingId(null); setFormData({ name: '', ip: '', port: 22, protocol: 'SSH', description: '', sshFingerprint: '', username: '', password: '', privateKey: '', allowTunneling: false, allowRebound: false, allowCopyPaste: false, machineGroupId: '', rdpSecurity: 'NLA', rdpIgnoreCert: false, rdpDomain: '' }); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2 text-sm shadow-sm">
               <Plus size={18} /> Ajouter une machine
             </button>
           </div>
@@ -722,10 +739,37 @@ const AdminMachines = () => {
                   <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Désignation</label>
                   <input type="text" className="form-input w-full h-11" placeholder="ex: Serveur Web Production" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2 space-y-2">
+                <div className="grid grid-cols-6 gap-3">
+                  <div className="col-span-3 space-y-2">
                     <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Adresse Host/IP</label>
                     <input type="text" className="form-input w-full h-11 font-mono text-sm" placeholder="10.0.0.1" required value={formData.ip} onChange={e => setFormData({ ...formData, ip: e.target.value })} />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Protocole</label>
+                    <select
+                      className="form-input w-full h-11 font-medium"
+                      value={formData.protocol}
+                      onChange={e => {
+                        const proto = e.target.value;
+                        setFormData({
+                          ...formData,
+                          protocol: proto,
+                          // Ajuste le port par defaut si l'admin n'a pas personnalise
+                          port:
+                            formData.port === 22 || formData.port === 3389
+                              ? proto === 'RDP' ? 3389 : 22
+                              : formData.port,
+                        });
+                      }}
+                    >
+                      <option value="SSH">SSH</option>
+                      {rdpEnabled && <option value="RDP">RDP</option>}
+                    </select>
+                    {!rdpEnabled && (
+                      <p className="text-[9px] text-text-secondary ml-1 mt-1">
+                        RDP désactivé — activez <span className="font-mono">ENABLE_RDP=true</span> et relancez avec <span className="font-mono">--profile rdp</span>.
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Port</label>
@@ -746,53 +790,101 @@ const AdminMachines = () => {
               </div>
 
               <div className="space-y-6">
-                <h3 className="text-[9px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 w-fit px-2 py-1 rounded border border-primary/10">2. Sécurité SSH & Identifiants</h3>
-                
-                {/* Fingerprint Field */}
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1 flex justify-between">
-                    Empreinte SHA-256
-                    <span className="text-[8px] text-danger">* Requis</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1 group">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
-                        <Fingerprint size={16} />
+                <h3 className="text-[9px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 w-fit px-2 py-1 rounded border border-primary/10">
+                  2. {formData.protocol === 'RDP' ? 'Sécurité RDP & Identifiants' : 'Sécurité SSH & Identifiants'}
+                </h3>
+
+                {/* ---- SSH-only: empreinte serveur ---- */}
+                {formData.protocol === 'SSH' && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1 flex justify-between">
+                      Empreinte SHA-256
+                      <span className="text-[8px] text-danger">* Requis</span>
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1 group">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
+                          <Fingerprint size={16} />
+                        </div>
+                        <input
+                          type="text"
+                          className="form-input input-with-icon h-11 w-full text-[10px] font-mono"
+                          placeholder="SHA256:..."
+                          required={formData.protocol === 'SSH'}
+                          value={formData.sshFingerprint}
+                          onChange={e => setFormData({ ...formData, sshFingerprint: e.target.value })}
+                        />
                       </div>
-                      <input 
-                        type="text" 
-                        className="form-input input-with-icon h-11 w-full text-[10px] font-mono" 
-                        placeholder="SHA256:..." 
-                        required 
-                        value={formData.sshFingerprint} 
-                        onChange={e => setFormData({ ...formData, sshFingerprint: e.target.value })} 
-                      />
+                      <button
+                        type="button"
+                        onClick={probeSshFingerprint}
+                        disabled={probing}
+                        className="p-2.5 bg-background-app border border-border-light rounded-lg text-primary hover:bg-primary/5 transition-all disabled:opacity-50 shadow-sm"
+                        title="Récupérer l'empreinte du serveur"
+                      >
+                        <RefreshCw size={20} className={probing ? 'animate-spin' : ''} />
+                      </button>
                     </div>
-                    <button 
-                      type="button" 
-                      onClick={probeSshFingerprint}
-                      disabled={probing}
-                      className="p-2.5 bg-background-app border border-border-light rounded-lg text-primary hover:bg-primary/5 transition-all disabled:opacity-50 shadow-sm"
-                      title="Récupérer l'empreinte du serveur"
-                    >
-                      <RefreshCw size={20} className={probing ? 'animate-spin' : ''} />
-                    </button>
+                    {formData.sshFingerprint && !editingId && (
+                      <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 flex gap-3 animate-in fade-in slide-in-from-top-2">
+                        <AlertTriangle size={18} className="text-warning flex-shrink-0" />
+                        <div className="space-y-1.5">
+                          <p className="text-[10px] text-warning leading-tight font-medium">
+                            Vérifiez cette empreinte manuellement. Ne validez que si elle correspond au serveur cible pour éviter toute interception (MITM).
+                          </p>
+                          <p className="text-[9px] text-warning/80 font-mono bg-warning/5 p-1.5 rounded border border-warning/20">
+                            # Vérifier sur le serveur (toutes les clés) :<br/>
+                            for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {formData.sshFingerprint && !editingId && (
-                    <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 flex gap-3 animate-in fade-in slide-in-from-top-2">
-                      <AlertTriangle size={18} className="text-warning flex-shrink-0" />
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] text-warning leading-tight font-medium">
-                          Vérifiez cette empreinte manuellement. Ne validez que si elle correspond au serveur cible pour éviter toute interception (MITM).
-                        </p>
-                        <p className="text-[9px] text-warning/80 font-mono bg-warning/5 p-1.5 rounded border border-warning/20">
-                          # Vérifier sur le serveur (toutes les clés) :<br/>
-                          for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf "$f"; done
-                        </p>
+                )}
+
+                {/* ---- RDP-only: mode de securite + domaine AD ---- */}
+                {formData.protocol === 'RDP' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Mode de sécurité</label>
+                        <select
+                          className="form-input w-full h-11 font-medium"
+                          value={formData.rdpSecurity}
+                          onChange={e => setFormData({ ...formData, rdpSecurity: e.target.value as any })}
+                        >
+                          <option value="NLA">NLA (recommandé)</option>
+                          <option value="TLS">TLS</option>
+                          <option value="RDP">RDP (legacy)</option>
+                          <option value="ANY">Auto-négocié</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Domaine AD (optionnel)</label>
+                        <input
+                          type="text"
+                          className="form-input w-full h-11 font-medium"
+                          placeholder="CORP"
+                          value={formData.rdpDomain}
+                          onChange={e => setFormData({ ...formData, rdpDomain: e.target.value })}
+                        />
                       </div>
                     </div>
-                  )}
-                </div>
+                    <div className="flex items-center justify-between p-4 bg-background-app rounded-xl border border-border-light">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-text-main uppercase tracking-tight">Ignorer certificat TLS</span>
+                        <span className="text-[9px] text-text-secondary opacity-60 font-medium">À n'activer qu'en lab. Désactive la vérification du certificat du serveur RDP.</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, rdpIgnoreCert: !formData.rdpIgnoreCert })}
+                        className={`transition-all transform active:scale-90 ${formData.rdpIgnoreCert ? 'text-warning' : 'text-text-secondary opacity-20'}`}
+                      >
+                        {formData.rdpIgnoreCert ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+                      </button>
+                    </div>
+                  </>
+                )}
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Utilisateur</label>
@@ -802,10 +894,12 @@ const AdminMachines = () => {
                   <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Mot de Passe</label>
                   <input type="password" name="new-password" title="password" className="form-input w-full h-11" placeholder={editingId ? "Inchangé si vide" : "••••••••"} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Clé Privée (PEM)</label>
-                  <textarea className="form-input w-full h-24 text-[9px] font-mono py-3 resize-none" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" value={formData.privateKey} onChange={e => setFormData({ ...formData, privateKey: e.target.value })}></textarea>
-                </div>
+                {formData.protocol === 'SSH' && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Clé Privée (PEM)</label>
+                    <textarea className="form-input w-full h-24 text-[9px] font-mono py-3 resize-none" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" value={formData.privateKey} onChange={e => setFormData({ ...formData, privateKey: e.target.value })}></textarea>
+                  </div>
+                )}
               </div>
 
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-border-light">

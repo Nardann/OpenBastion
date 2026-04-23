@@ -12,9 +12,10 @@ import {
   IsEnum,
   IsNotEmpty,
   IsUUID,
+  ValidateIf,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
-import { Role, Protocol } from '@prisma/client';
+import { Role, Protocol, RdpSecurity } from '@prisma/client';
 
 const SAFE_TEXT_REGEX = /^[a-zA-Z0-9\s._-]*$/; // Allow empty strings
 const IP_HOSTNAME_REGEX = /^[^<>"&]+$/;
@@ -53,12 +54,15 @@ export class CreateMachineDto {
   @Matches(SAFE_TEXT_REGEX)
   description?: string;
 
+  // Empreinte SSH : obligatoire UNIQUEMENT pour le protocole SSH.
+  // Pour RDP/VNC elle est ignoree (guacd gere ses propres certificats TLS).
+  @ValidateIf((o) => !o.protocol || o.protocol === Protocol.SSH)
   @IsString()
-  @IsNotEmpty()
+  @IsNotEmpty({ message: "Empreinte SSH obligatoire pour le protocole SSH" })
   @Matches(/^SHA256:[A-Za-z0-9+/=]{43,}$/, {
     message: "Format d'empreinte SHA256 (SHA256:Base64...) obligatoire",
   })
-  sshFingerprint!: string;
+  sshFingerprint?: string;
 
   @IsString()
   @IsNotEmpty({ message: "Le nom d'utilisateur ne peut pas être vide" })
@@ -73,10 +77,34 @@ export class CreateMachineDto {
   @MaxLength(2048)
   password?: string;
 
+  // Cle privee SSH : uniquement pertinent pour SSH.
+  @ValidateIf((o) => !o.protocol || o.protocol === Protocol.SSH)
   @IsOptional()
   @IsString()
   @MaxLength(4096)
   privateKey?: string;
+
+  // ---- Parametres specifiques RDP (optionnels, ignores pour SSH) ----
+  @IsOptional()
+  @IsEnum(RdpSecurity, {
+    message: 'rdpSecurity doit etre ANY, RDP, TLS ou NLA',
+  })
+  rdpSecurity?: RdpSecurity;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return value;
+  })
+  @IsBoolean()
+  rdpIgnoreCert?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^[^<>"&]*$/, { message: 'Domaine AD invalide' })
+  rdpDomain?: string;
 
   @IsOptional()
   @Transform(({ value }) => {
@@ -162,6 +190,28 @@ export class UpdateMachineDto {
   @MaxLength(4096)
   privateKey?: string;
 
+  // ---- RDP ----
+  @IsOptional()
+  @IsEnum(RdpSecurity, {
+    message: 'rdpSecurity doit etre ANY, RDP, TLS ou NLA',
+  })
+  rdpSecurity?: RdpSecurity;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.toLowerCase() === 'true';
+    return value;
+  })
+  @IsBoolean()
+  rdpIgnoreCert?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Matches(/^[^<>"&]*$/, { message: 'Domaine AD invalide' })
+  rdpDomain?: string;
+
   @IsOptional()
   @Transform(({ value }) => {
     if (typeof value === 'boolean') return value;
@@ -242,6 +292,10 @@ export class UpdateUserDto {
 }
 
 export class UpdateMeDto {
+  @IsOptional()
+  @IsEmail({}, { message: 'L\'adresse email doit être valide' })
+  email?: string;
+
   @IsOptional()
   @IsString()
   @MinLength(3)

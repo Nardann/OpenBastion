@@ -11,6 +11,9 @@ CREATE TYPE "AccessLevel" AS ENUM ('OWNER', 'OPERATOR', 'VIEWER');
 CREATE TYPE "Protocol" AS ENUM ('SSH', 'RDP', 'VNC');
 
 -- CreateEnum
+CREATE TYPE "RdpSecurity" AS ENUM ('ANY', 'RDP', 'TLS', 'NLA');
+
+-- CreateEnum
 CREATE TYPE "AuthProviderType" AS ENUM ('LDAP', 'OIDC');
 
 -- CreateTable
@@ -66,11 +69,14 @@ CREATE TABLE "Machine" (
     "port" INTEGER NOT NULL,
     "protocol" "Protocol" NOT NULL DEFAULT 'SSH',
     "description" TEXT,
-    "sshFingerprint" TEXT NOT NULL,
+    "sshFingerprint" TEXT,
     "machineGroupId" TEXT,
     "allowTunneling" BOOLEAN NOT NULL DEFAULT false,
     "allowRebound" BOOLEAN NOT NULL DEFAULT false,
     "allowCopyPaste" BOOLEAN NOT NULL DEFAULT false,
+    "rdpSecurity" "RdpSecurity" NOT NULL DEFAULT 'NLA',
+    "rdpIgnoreCert" BOOLEAN NOT NULL DEFAULT false,
+    "rdpDomain" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 

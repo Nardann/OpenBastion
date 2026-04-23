@@ -8,6 +8,8 @@ import {
   Get,
   UseGuards,
   Req,
+  Param,
+  Patch,
 } from '@nestjs/common';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
@@ -28,6 +30,9 @@ import {
   THROTTLE_AUTH_TTL,
 } from '../common/constants/security.constants';
 import * as crypto from 'node:crypto';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '@prisma/client';
 
 @Controller('auth')
 export class AuthController {
@@ -51,7 +56,72 @@ export class AuthController {
       id: p.id,
       name: p.name,
       type: p.type,
+      enabled: p.enabled,
+      config: p.config,
     }));
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Get('admin/providers')
+  async getAllProviders() {
+    const providers = await this.prisma.authProvider.findMany();
+    return Promise.all(
+      providers.map(async (p) => ({
+        ...p,
+        config: (this.authProvidersService as any).decryptConfig(p.config, p.id),
+      })),
+    );
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch('providers/:id')
+  async updateProvider(@Param('id') id: string, @Body() body: any) {
+    const result = await this.authProvidersService.update(id, body);
+    
+    await this.auditService.logAction(
+      null as any, // Admin user sub will be added by interceptor if possible
+      'AUTH: PROVIDER_UPDATED',
+      { providerId: id, type: result.type, enabled: result.enabled },
+      'ADMIN' as any,
+      '',
+      AuditCategory.AUTH,
+    );
+    
+    return {
+      ...result,
+      config: (this.authProvidersService as any).decryptConfig(result.config, result.id),
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Post('providers/upsert')
+  async upsertProvider(@Body() body: any) {
+    const { type, config, enabled } = body;
+    const existing = await this.prisma.authProvider.findFirst({
+      where: { type },
+    });
+
+    let result;
+    if (existing) {
+      result = await this.authProvidersService.update(existing.id, { config, enabled });
+    } else {
+      result = await this.authProvidersService.create({
+        name: type === 'LDAP' ? 'LDAP Provider' : 'OIDC Provider',
+        type,
+        config,
+      });
+      if (enabled !== undefined) {
+        await this.authProvidersService.update(result.id, { enabled });
+      }
+    }
+
+    return {
+      ...result,
+      config: (this.authProvidersService as any).decryptConfig(result.config, result.id),
+    };
   }
 
   @Post('login')
@@ -290,7 +360,7 @@ export class AuthController {
 
     const oidcCookieOptions = {
       httpOnly: true,
-      sameSite: 'strict' as const,
+      sameSite: 'lax' as const, // 'lax' requis : 'strict' bloque le retour du callback OIDC (redirection cross-site)
       maxAge: 300000,
       secure: this.isProduction,
     };
@@ -315,10 +385,13 @@ export class AuthController {
       throw new UnauthorizedException('Invalid OIDC state');
     }
 
-    // Construct the full URL of the callback request
-    const protocol = this.isProduction ? 'https' : 'http';
-    const host = request.get('host');
-    const fullUrl = `${protocol}://${host}${request.originalUrl}`;
+    // Reconstruct the full public URL of the callback request.
+    // Behind nginx, the /api/ prefix is stripped before reaching NestJS,
+    // so we must re-add it to match the redirect_uri registered in authentik.
+    const protocol =
+      request.get('X-Forwarded-Proto') || (this.isProduction ? 'https' : 'http');
+    const host = request.get('X-Forwarded-Host') || request.get('host');
+    const fullUrl = `${protocol}://${host}/api${request.originalUrl}`;
 
     const user = await this.oidcService.validateCallback(
       fullUrl,

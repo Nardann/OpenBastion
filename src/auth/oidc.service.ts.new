@@ -1,0 +1,207 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { AuthProvidersService } from './auth-providers.service';
+import { UsersService } from '../users/users.service';
+import { AuthMethod } from '@prisma/client';
+import * as https from 'https';
+
+@Injectable()
+export class OidcService {
+  private readonly logger = new Logger(OidcService.name);
+  private configCache: Map<
+    string,
+    { serverMetadata: any; config: any; cachedAt: number }
+  > = new Map();
+  private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  constructor(
+    private authProvidersService: AuthProvidersService,
+    private usersService: UsersService,
+  ) {}
+
+  private async getOpenidClient(): Promise<any> {
+    const lib: any = await import('openid-client');
+    return lib;
+  }
+
+  /**
+   * Creates a custom HTTPS agent for internal/dev environments
+   */
+  private getHttpsAgent(issuerUrl: string) {
+    const isInternal =
+      issuerUrl.includes('localhost') ||
+      issuerUrl.includes('127.0.0.1') ||
+      issuerUrl.includes('192.168.') ||
+      issuerUrl.includes('host.docker.internal');
+
+    if (isInternal && process.env.NODE_ENV !== 'production') {
+      this.logger.warn(
+        'Using insecure HTTPS agent for internal OIDC issuer - development only',
+      );
+      return new https.Agent({
+        rejectUnauthorized: false,
+      });
+    }
+    return undefined;
+  }
+
+  async getServerMetadata(): Promise<any | null> {
+    const provider = await this.authProvidersService.findByType('OIDC');
+    if (!provider) {
+      this.logger.warn('OIDC Provider not found or disabled');
+      return null;
+    }
+
+    const cached = this.configCache.get(provider.id);
+    if (cached && Date.now() - cached.cachedAt < this.CACHE_TTL_MS) {
+      return cached.serverMetadata;
+    }
+
+    const config = provider.config as any;
+
+    const issuerUrl = config.issuer || config.issuerUrl;
+    if (!issuerUrl) {
+      this.logger.error('OIDC config missing issuer URL');
+      return null;
+    }
+
+    try {
+      this.logger.log(`Discovering OIDC server at: ${issuerUrl}`);
+
+      const oidc = await this.getOpenidClient();
+      const httpsAgent = this.getHttpsAgent(issuerUrl);
+
+      // openid-client v6 uses discovery function
+      const serverMetadata = await oidc.discovery(new URL(issuerUrl), {
+        agent: httpsAgent,
+      });
+
+      this.configCache.set(provider.id, {
+        serverMetadata,
+        config,
+        cachedAt: Date.now(),
+      });
+      this.logger.log('OIDC discovery successful');
+      return serverMetadata;
+    } catch (error: any) {
+      this.logger.error(
+        `OIDC discovery failed for ${issuerUrl}: ${error.message}`,
+      );
+      return null;
+    }
+  }
+
+  async getAuthorizationUrl(
+    state: string,
+    nonce: string,
+  ): Promise<string | null> {
+    const serverMetadata = await this.getServerMetadata();
+    if (!serverMetadata) return null;
+
+    const provider = await this.authProvidersService.findByType('OIDC');
+    const config = provider!.config as any;
+
+    try {
+      const oidc = await this.getOpenidClient();
+
+      // buildAuthorizationUrl function from openid-client v6
+      const authorizationUrl = oidc.buildAuthorizationUrl(serverMetadata, {
+        clientId: config.clientId,
+        scope: 'openid email profile',
+        state,
+        nonce,
+        redirectUri: config.callbackUrl,
+      });
+
+      this.logger.log(`OIDC Authorization URL: ${authorizationUrl.href}`);
+      return authorizationUrl.href;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to generate OIDC authorization URL: ${error.message}`,
+      );
+      return null;
+    }
+  }
+
+  async validateCallback(
+    fullUrl: string,
+    savedState: string,
+    savedNonce: string,
+  ): Promise<any> {
+    const serverMetadata = await this.getServerMetadata();
+    if (!serverMetadata) return null;
+
+    const provider = await this.authProvidersService.findByType('OIDC');
+    const config = provider!.config as any;
+
+    try {
+      this.logger.log('Validating OIDC callback...');
+
+      const oidc = await this.getOpenidClient();
+      const currentUrl = new URL(fullUrl);
+      const httpsAgent = this.getHttpsAgent(
+        config.issuer || config.issuerUrl,
+      );
+
+      // authorizationCodeGrant from openid-client v6
+      const tokens = await oidc.authorizationCodeGrant(
+        serverMetadata,
+        currentUrl,
+        {
+          clientId: config.clientId,
+          clientSecret: config.clientSecret,
+          redirectUri: config.callbackUrl,
+          expectedState: savedState,
+          expectedNonce: savedNonce,
+        },
+        {
+          agent: httpsAgent,
+        },
+      );
+
+      this.logger.log('Tokens received, fetching user info...');
+
+      // fetchUserInfo from openid-client v6
+      const userinfo = await oidc.fetchUserInfo(
+        serverMetadata,
+        tokens.access_token,
+        {
+          agent: httpsAgent,
+        },
+      );
+
+      // Validate required claims
+      if (!userinfo.email) {
+        this.logger.error('OIDC user has no email claim');
+        return null;
+      }
+
+      if (!userinfo.sub) {
+        this.logger.error('OIDC user has no sub claim');
+        return null;
+      }
+
+      this.logger.log(`OIDC login successful for ${userinfo.email}`);
+
+      // JIT Provisioning
+      const user = await this.usersService.findOrCreateExternalUser(
+        userinfo.email as string,
+        userinfo.sub as string,
+        AuthMethod.OIDC,
+      );
+      return user;
+    } catch (error: any) {
+      this.logger.error(
+        `OIDC callback validation failed: ${error.message}`,
+      );
+      if (error.response) {
+        try {
+          const body = await error.response.text();
+          this.logger.error(`OIDC Provider Error Body: ${body}`);
+        } catch (e) {
+          this.logger.error('Could not read OIDC error body');
+        }
+      }
+      return null;
+    }
+  }
+}

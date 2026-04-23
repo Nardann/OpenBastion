@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Terminal from './pages/Terminal';
+import RdpSession from './pages/RdpSession';
 import Profile from './pages/Profile';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './pages/AdminDashboard';
@@ -43,7 +44,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
       setError('');
       setElevating(true);
       try {
-        await sudo(sudoCode);
+        await sudo(sudoCode.trim() || undefined);
       } catch (err: any) {
         setError(err.response?.data?.message || 'Code invalide');
       } finally {
@@ -145,6 +146,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute>
                   <Terminal />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rdp/:id"
+              element={
+                <ProtectedRoute>
+                  <RdpSession />
                 </ProtectedRoute>
               }
             />

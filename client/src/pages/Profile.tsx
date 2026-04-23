@@ -321,6 +321,7 @@ const Profile: React.FC = () => {
                     <input 
                       required 
                       type="email" 
+                      autoComplete="email"
                       className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" 
                       value={formData.email} 
                       onChange={e => setFormData({...formData, email: e.target.value})} 
@@ -334,6 +335,7 @@ const Profile: React.FC = () => {
                     <User className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
                     <input 
                       type="text" 
+                      autoComplete="username"
                       className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" 
                       placeholder="Identifiant de connexion"
                       value={formData.username} 
@@ -352,6 +354,7 @@ const Profile: React.FC = () => {
                     <Shield size={16} className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
                     <input 
                       type="password" 
+                      autoComplete="current-password"
                       className={`w-full pl-10 pr-4 py-2 bg-background-app border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all ${error.includes('actuel') ? 'border-red-500' : 'border-border-light'}`}
                       placeholder="Requis pour toute modification de sécurité"
                       value={formData.currentPassword} 
@@ -367,6 +370,7 @@ const Profile: React.FC = () => {
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
                       <input 
                         type="password" 
+                        autoComplete="new-password"
                         className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" 
                         value={formData.password} 
                         onChange={e => setFormData({...formData, password: e.target.value})} 
@@ -379,6 +383,7 @@ const Profile: React.FC = () => {
                       <Lock className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
                       <input 
                         type="password" 
+                        autoComplete="new-password"
                         className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" 
                         value={formData.confirmPassword} 
                         onChange={e => setFormData({...formData, confirmPassword: e.target.value})} 
