@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  FileText, 
-  User as UserIcon, 
-  Globe, 
+import {
+  FileText,
+  User as UserIcon,
+  Globe,
   RefreshCw,
   Search,
   Activity,
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { formatDate } from '../services/utils';
+import { useLang } from '../context/LangContext';
 
 interface AuditLog {
   id: string;
@@ -32,30 +33,30 @@ interface AuditLog {
   metadata?: any;
 }
 
-const CATEGORIES = [
-  { id: '', label: 'Tous les logs', icon: <Activity size={14} /> },
-  { id: 'AUTH', label: 'Sécurité / Auth', icon: <Lock size={14} /> },
-  { id: 'USER', label: 'Utilisateurs', icon: <UserCheck size={14} /> },
-  { id: 'GROUP', label: 'Groupes', icon: <UserIcon size={14} /> },
-  { id: 'MACHINE', label: 'Machines', icon: <Server size={14} /> },
-  { id: 'PERMISSION', label: 'Droits', icon: <Shield size={14} /> },
-  { id: 'TERMINAL', label: 'Sessions SSH', icon: <Terminal size={14} /> },
-  { id: 'SYSTEM', label: 'Système', icon: <Settings size={14} /> },
-];
-
 const AdminLogs: React.FC = () => {
+  const { t } = useLang();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
+  const CATEGORIES = [
+    { id: '', label: t('adminLogs.tabs.all'), icon: <Activity size={14} /> },
+    { id: 'AUTH', label: t('adminLogs.tabs.security'), icon: <Lock size={14} /> },
+    { id: 'USER', label: t('adminLogs.tabs.users'), icon: <UserCheck size={14} /> },
+    { id: 'GROUP', label: t('adminLogs.tabs.groups'), icon: <UserIcon size={14} /> },
+    { id: 'MACHINE', label: t('adminLogs.tabs.machines'), icon: <Server size={14} /> },
+    { id: 'PERMISSION', label: t('adminLogs.tabs.permissions'), icon: <Shield size={14} /> },
+    { id: 'TERMINAL', label: t('adminLogs.tabs.ssh'), icon: <Terminal size={14} /> },
+    { id: 'SYSTEM', label: t('adminLogs.tabs.system'), icon: <Settings size={14} /> },
+  ];
+
   const fetchLogs = async () => {
     try {
       setLoading(true);
       const url = activeCategory ? `/audit/logs?category=${activeCategory}` : '/audit/logs';
       const response = await api.get(url);
-      // Backend returns { items: [], total: X, ... }
       setLogs(response.data?.items || []);
     } catch (error) {
       console.error('Failed to fetch logs', error);
@@ -68,7 +69,7 @@ const AdminLogs: React.FC = () => {
     fetchLogs();
   }, [activeCategory]);
 
-  const filteredLogs = logs.filter(log => 
+  const filteredLogs = logs.filter(log =>
     log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.user?.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.user?.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -79,20 +80,19 @@ const AdminLogs: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-text-main">Audit & Traçabilité</h1>
-          <p className="text-text-secondary mt-1 text-sm">Surveillance immuable et historique complet de l'activité du bastion.</p>
+          <h1 className="text-text-main">{t('adminLogs.title')}</h1>
+          <p className="text-text-secondary mt-1 text-sm">{t('adminLogs.subtitle')}</p>
         </div>
-        <button 
+        <button
           onClick={fetchLogs}
           className="btn-secondary flex items-center gap-2 text-sm"
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-          Actualiser
+          {t('adminLogs.refresh')}
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Categories Sidebar */}
         <div className="lg:col-span-1 space-y-1">
           {CATEGORIES.map(cat => (
             <button
@@ -106,13 +106,12 @@ const AdminLogs: React.FC = () => {
           ))}
         </div>
 
-        {/* Logs Table */}
         <div className="lg:col-span-3 space-y-4">
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral" size={16} />
-            <input 
-              type="text" 
-              placeholder="Recherche (Action, Acteur, IP...)"
+            <input
+              type="text"
+              placeholder={t('adminLogs.searchPlaceholder')}
               className="form-input input-with-icon w-full text-sm shadow-sm"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
@@ -124,15 +123,15 @@ const AdminLogs: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead className="table-header border-b border-border-light">
                   <tr>
-                    <th className="px-6 py-4">Action & Heure</th>
-                    <th className="px-6 py-4">Utilisateur</th>
-                    <th className="px-6 py-4 text-right">Détails</th>
+                    <th className="px-6 py-4">{t('adminLogs.cols.action')}</th>
+                    <th className="px-6 py-4">{t('adminLogs.cols.user')}</th>
+                    <th className="px-6 py-4 text-right">{t('adminLogs.cols.details')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light">
                   {!loading && filteredLogs.map((log) => (
-                    <tr 
-                      key={log.id} 
+                    <tr
+                      key={log.id}
                       onClick={() => setSelectedLog(log)}
                       className="group hover:bg-background-app transition-colors cursor-pointer"
                     >
@@ -155,7 +154,7 @@ const AdminLogs: React.FC = () => {
                             {(log.user?.username || log.user?.email || 'S')[0].toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-sm font-medium text-text-main leading-none">{log.user?.username || log.user?.email || 'Système'}</p>
+                            <p className="text-sm font-medium text-text-main leading-none">{log.user?.username || log.user?.email || t('adminLogs.detail.systemActor')}</p>
                             <span className="text-[9px] text-text-secondary font-mono">{log.ipAddress}</span>
                           </div>
                         </div>
@@ -169,66 +168,65 @@ const AdminLogs: React.FC = () => {
               </table>
             </div>
             {!loading && filteredLogs.length === 0 && (
-              <div className="p-20 text-center text-text-secondary italic text-sm">Aucun log trouvé.</div>
+              <div className="p-20 text-center text-text-secondary italic text-sm">{t('adminLogs.noLogs')}</div>
             )}
             {loading && (
-               <div className="p-20 text-center">
-                  <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto" />
-               </div>
+              <div className="p-20 text-center">
+                <RefreshCw className="w-8 h-8 text-primary animate-spin mx-auto" />
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Log Detail Modal */}
       {selectedLog && (
         <div className="fixed inset-0 bg-text-main/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-background-surface w-full max-w-2xl rounded-lg border border-border-light shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-border-light bg-background-app flex justify-between items-center">
               <div className="flex items-center gap-3 text-primary">
                 <Info size={24} />
-                <h2 className="text-xl font-bold text-text-main">Détails de l'événement</h2>
+                <h2 className="text-xl font-bold text-text-main">{t('adminLogs.detail.title')}</h2>
               </div>
               <button onClick={() => setSelectedLog(null)} className="p-2 hover:bg-background-surface rounded-full text-text-secondary transition-colors"><X size={20} /></button>
             </div>
-            
+
             <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Action</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.action')}</p>
                   <p className="text-sm font-bold text-text-main bg-primary/5 p-2 rounded-md border border-primary/10">{selectedLog.action}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Catégorie</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.category')}</p>
                   <p className="pill-badge bg-background-app text-text-main border border-border-light inline-block px-3 py-1 mt-1">{selectedLog.category || 'SYSTEM'}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Horodatage</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.timestamp')}</p>
                   <p className="text-sm font-mono flex items-center gap-2 text-text-main"><Clock size={14} className="text-neutral" /> {new Date(selectedLog.timestamp).toLocaleString()}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">Source IP</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.ip')}</p>
                   <p className="text-sm font-mono flex items-center gap-2 text-text-main"><Globe size={14} className="text-neutral" /> {selectedLog.ipAddress}</p>
                 </div>
               </div>
 
               <div className="pt-6 border-t border-border-light space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-primary flex items-center gap-2">
-                  <UserIcon size={14} /> Acteur du système
+                  <UserIcon size={14} /> {t('adminLogs.detail.actor')}
                 </h3>
                 <div className="bg-background-app rounded-lg p-4 flex items-center gap-4 border border-border-light">
                   <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl border border-primary/20">
                     {(selectedLog.user?.username || selectedLog.user?.email || 'S')[0].toUpperCase()}
                   </div>
                   <div className="flex-1">
-                    <p className="font-bold text-text-main">{selectedLog.user?.username || 'Système'}</p>
+                    <p className="font-bold text-text-main">{selectedLog.user?.username || t('adminLogs.detail.systemActor')}</p>
                     <p className="text-xs text-text-secondary font-mono">{selectedLog.user?.email || 'internal@bastion.local'}</p>
                   </div>
                   <div className="text-right">
                     <span className="pill-badge bg-primary text-white text-[10px] font-bold uppercase">
-                      {selectedLog.user?.role || 'SYSTEM'}
+                      {selectedLog.user?.role || t('adminLogs.detail.systemActor')}
                     </span>
-                    <p className="text-[10px] mt-1 text-text-secondary uppercase font-medium">{selectedLog.authMethod || 'Internal'}</p>
+                    <p className="text-[10px] mt-1 text-text-secondary uppercase font-medium">{selectedLog.authMethod || t('adminLogs.detail.internalIp')}</p>
                   </div>
                 </div>
               </div>
@@ -236,7 +234,7 @@ const AdminLogs: React.FC = () => {
               {selectedLog.metadata && (
                 <div className="pt-6 border-t border-border-light space-y-3">
                   <h3 className="text-xs font-bold uppercase tracking-widest text-primary flex items-center gap-2">
-                    <Fingerprint size={14} /> Métadonnées techniques
+                    <Fingerprint size={14} /> {t('adminLogs.detail.metadata')}
                   </h3>
                   <div className="bg-text-main rounded-lg p-6 border border-border-light shadow-inner">
                     <pre className="text-[11px] text-success font-mono overflow-x-auto">
@@ -246,13 +244,13 @@ const AdminLogs: React.FC = () => {
                 </div>
               )}
             </div>
-            
+
             <div className="p-6 bg-background-app border-t border-border-light flex justify-end">
-              <button 
+              <button
                 onClick={() => setSelectedLog(null)}
                 className="btn-primary text-sm px-8"
               >
-                Fermer
+                {t('common.close')}
               </button>
             </div>
           </div>

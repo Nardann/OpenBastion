@@ -4,6 +4,7 @@ import { ShieldCheck, Mail, Lock, LogIn, Database, User as UserIcon, Sun, Moon, 
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useNotification } from '../context/NotificationContext';
+import { useLang } from '../context/LangContext';
 import api from '../services/api';
 
 interface AuthProvider {
@@ -26,6 +27,7 @@ const Login: React.FC = () => {
   const { login, loginOtp } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const { notify } = useNotification();
+  const { t } = useLang();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -59,8 +61,8 @@ const Login: React.FC = () => {
       } else if (res.requiresPasswordChange) {
         notify({
           type: 'error',
-          title: 'Mot de passe périmé',
-          message: 'Veuillez changer votre mot de passe car celui-ci a périmé.',
+          title: t('notifications.passwordExpired.title'),
+          message: t('notifications.passwordExpired.message'),
           duration: 10000,
         });
         navigate('/profile');
@@ -68,7 +70,7 @@ const Login: React.FC = () => {
         navigate('/');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || 'Identifiants ou méthode incorrects');
+      setError(err.response?.data?.message || err.message || t('login.badCredentials'));
     } finally {
       setLoading(false);
     }
@@ -83,7 +85,6 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background-app p-4 relative overflow-hidden transition-colors duration-300">
-      {/* Theme Toggle in Login */}
       <div className="absolute top-8 right-8">
         <button
           onClick={toggleTheme}
@@ -99,7 +100,7 @@ const Login: React.FC = () => {
             <ShieldCheck className="w-10 h-10 text-primary" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-text-main">Open-Bastion</h1>
-          <p className="text-text-secondary font-medium uppercase tracking-[0.1em] text-[10px] mt-1">Accès Souverain & Sécurisé</p>
+          <p className="text-text-secondary font-medium uppercase tracking-[0.1em] text-[10px] mt-1">{t('login.subtitle')}</p>
         </div>
 
         <div className="bg-background-surface border border-border-light rounded-xl shadow-lg p-10">
@@ -112,7 +113,6 @@ const Login: React.FC = () => {
 
             {!requiresOtp ? (
               <>
-                {/* Auth Method Selector */}
                 {isLdapEnabled && (
                   <div className="flex p-1 bg-background-app rounded-lg border border-border-light">
                     <button
@@ -120,20 +120,20 @@ const Login: React.FC = () => {
                       onClick={() => setAuthMethod('LOCAL')}
                       className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-[10px] font-bold transition-all ${authMethod === 'LOCAL' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
                     >
-                      <UserIcon size={14} /> LOCAL
+                      <UserIcon size={14} /> {t('login.methodLocal')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setAuthMethod('LDAP')}
                       className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-[10px] font-bold transition-all ${authMethod === 'LDAP' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
                     >
-                      <Database size={14} /> LDAP / AD
+                      <Database size={14} /> {t('login.methodLdap')}
                     </button>
                   </div>
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">Identifiant</label>
+                  <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">{t('login.identifier')}</label>
                   <div className="relative group">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
                       <Mail size={16} />
@@ -141,7 +141,7 @@ const Login: React.FC = () => {
                     <input
                       required
                       className="form-input input-with-icon h-11 text-sm"
-                      placeholder={authMethod === 'LOCAL' ? "Email ou Pseudo" : "Nom d'utilisateur LDAP"}
+                      placeholder={authMethod === 'LOCAL' ? t('login.identifierPlaceholder') : t('login.identifierPlaceholderLdap')}
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
                     />
@@ -149,7 +149,7 @@ const Login: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">Mot de passe</label>
+                  <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">{t('login.password')}</label>
                   <div className="relative group">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
                       <Lock size={16} />
@@ -158,7 +158,7 @@ const Login: React.FC = () => {
                       required
                       type="password"
                       className="form-input input-with-icon h-11 text-sm"
-                      placeholder="••••••••"
+                      placeholder={t('login.passwordPlaceholder')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                     />
@@ -167,7 +167,7 @@ const Login: React.FC = () => {
               </>
             ) : (
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">Code OTP</label>
+                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">{t('login.otpCode')}</label>
                 <div className="relative group">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
                     <ShieldCheck size={16} />
@@ -183,7 +183,7 @@ const Login: React.FC = () => {
                   />
                 </div>
                 <p className="text-[10px] text-text-secondary mt-2 text-center">
-                  Entrez le code généré par votre application d'authentification.
+                  {t('login.otpHint')}
                 </p>
               </div>
             )}
@@ -198,7 +198,7 @@ const Login: React.FC = () => {
               ) : (
                 <>
                   <LogIn size={18} />
-                  {requiresOtp ? 'Vérifier le code' : 'Connexion'}
+                  {requiresOtp ? t('login.verifyOtp') : t('login.submit')}
                 </>
               )}
             </button>
@@ -210,7 +210,7 @@ const Login: React.FC = () => {
                     <span className="w-full border-t border-border-light"></span>
                   </div>
                   <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
-                    <span className="bg-background-surface px-2 text-text-secondary">Ou utiliser SSO</span>
+                    <span className="bg-background-surface px-2 text-text-secondary">{t('login.ssoLabel')}</span>
                   </div>
                 </div>
 
@@ -220,7 +220,7 @@ const Login: React.FC = () => {
                   className="w-full h-11 flex items-center justify-center gap-3 bg-background-app border border-border-light text-text-main text-xs font-bold rounded-lg hover:bg-background-surface hover:border-primary/50 transition-all shadow-sm"
                 >
                   <Globe size={16} className="text-primary" />
-                  Se connecter avec OpenID Connect
+                  {t('login.ssoButton')}
                 </button>
               </div>
             )}
@@ -231,14 +231,14 @@ const Login: React.FC = () => {
                 onClick={() => setRequiresOtp(false)}
                 className="w-full text-[10px] font-bold text-text-secondary uppercase hover:text-text-main transition-colors"
               >
-                Retour
+                {t('login.back')}
               </button>
             )}
           </form>
         </div>
 
         <p className="text-center mt-8 text-text-secondary text-[10px] font-medium uppercase tracking-widest">
-          &copy; 2026 BASTION NODE - PAM SOUVERAIN
+          {t('login.footer')}
         </p>
       </div>
     </div>

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Server, Terminal as TerminalIcon, Monitor, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon, FolderOpen, X } from 'lucide-react';
+import { Server, Terminal as TerminalIcon, Monitor, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon, FolderOpen, X, Globe } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
+import { useLang, AVAILABLE_LANGS } from '../context/LangContext';
 
 interface Machine {
   id: string;
@@ -24,6 +25,7 @@ interface MachineGroup {
 const Dashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { lang, setLang, t } = useLang();
   const [machines, setMachines] = useState<Machine[]>([]);
   const [allMachines, setAllMachines] = useState<Machine[]>([]);
   const [machineGroups, setMachineGroups] = useState<MachineGroup[]>([]);
@@ -49,14 +51,13 @@ const Dashboard: React.FC = () => {
     fetchData();
   }, []);
 
-  // Filter machines when selected groups change
   useEffect(() => {
     if (selectedGroups.length === 0) {
       setMachines(allMachines);
     } else {
       setMachines(
-        allMachines.filter(m => 
-          selectedGroups.includes(m.machineGroupId || 'ungrouped') || 
+        allMachines.filter(m =>
+          selectedGroups.includes(m.machineGroupId || 'ungrouped') ||
           (m.machineGroupId && selectedGroups.includes(m.machineGroupId))
         )
       );
@@ -65,27 +66,39 @@ const Dashboard: React.FC = () => {
 
   const toggleGroupFilter = (groupId: string) => {
     setSelectedGroups(prev =>
-      prev.includes(groupId) 
+      prev.includes(groupId)
         ? prev.filter(id => id !== groupId)
         : [...prev, groupId]
     );
   };
 
+  const cycleLang = () => {
+    const idx = AVAILABLE_LANGS.findIndex(l => l.code === lang);
+    const next = AVAILABLE_LANGS[(idx + 1) % AVAILABLE_LANGS.length];
+    setLang(next.code);
+  };
+
   return (
     <div className="min-h-screen bg-background-app text-text-main font-sans transition-colors duration-300">
-      {/* Header */}
       <header className="bg-background-surface border-b border-border-light sticky top-0 z-50 shadow-sm transition-colors duration-300">
         <div className="max-w-7xl mx-auto px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-primary" />
-            <span className="text-xl font-bold tracking-tight text-text-main">Open-Bastion</span>
+            <span className="text-xl font-bold tracking-tight text-text-main">{t('nav.brand')}</span>
           </div>
-          
+
           <div className="flex items-center gap-4">
+            <button
+              onClick={cycleLang}
+              className="p-2 text-text-secondary hover:text-primary transition-colors"
+              title={lang.toUpperCase()}
+            >
+              <Globe size={18} />
+            </button>
             <button
               onClick={toggleTheme}
               className="p-2 text-text-secondary hover:text-primary transition-colors mr-2"
-              title={theme === 'light' ? 'Mode sombre' : 'Mode clair'}
+              title={theme === 'light' ? t('common.darkMode') : t('common.lightMode')}
             >
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
@@ -96,10 +109,10 @@ const Dashboard: React.FC = () => {
                 className="flex items-center gap-2 text-text-secondary hover:text-primary transition-colors text-sm font-medium mr-4"
               >
                 <Settings className="w-4 h-4" />
-                Administration
+                {t('nav.administration')}
               </Link>
             )}
-            
+
             <Link to="/profile" className="flex items-center gap-2 group">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-text-main group-hover:text-primary transition-colors">{user?.username || user?.email}</p>
@@ -108,11 +121,11 @@ const Dashboard: React.FC = () => {
                 <UserIcon size={16} />
               </div>
             </Link>
-            
+
             <button
               onClick={logout}
               className="p-2 text-text-secondary hover:text-danger rounded-md transition-colors"
-              title="Déconnexion"
+              title={t('nav.logout')}
             >
               <LogOut size={20} />
             </button>
@@ -122,16 +135,15 @@ const Dashboard: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-8 py-10">
         <div className="mb-10">
-          <h1 className="text-2xl font-bold text-text-main mb-1">Machines accessibles</h1>
-          <p className="text-text-secondary text-sm">Sélectionnez une ressource pour ouvrir une session sécurisée.</p>
+          <h1 className="text-2xl font-bold text-text-main mb-1">{t('dashboard.title')}</h1>
+          <p className="text-text-secondary text-sm">{t('dashboard.subtitle')}</p>
         </div>
 
-        {/* Machine Groups Filter */}
         {machineGroups.length > 0 && (
           <div className="mb-8 p-6 bg-background-surface border border-border-light rounded-lg">
             <div className="flex items-center gap-3 mb-4">
               <FolderOpen size={20} className="text-primary" />
-              <h2 className="font-bold text-text-main">Filtrer par groupe</h2>
+              <h2 className="font-bold text-text-main">{t('dashboard.filterByGroup')}</h2>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {machineGroups.map(group => (
@@ -155,7 +167,7 @@ const Dashboard: React.FC = () => {
                 className="mt-4 flex items-center gap-2 text-[10px] font-bold text-primary uppercase hover:opacity-75 transition-opacity"
               >
                 <X size={14} />
-                Réinitialiser les filtres
+                {t('dashboard.resetFilters')}
               </button>
             )}
           </div>
@@ -182,7 +194,7 @@ const Dashboard: React.FC = () => {
                     {machine.protocol}
                   </span>
                 </div>
-                
+
                 <h3 className="text-lg font-bold text-text-main mb-1">{machine.name}</h3>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-2 h-2 rounded-full bg-success" />
@@ -195,17 +207,13 @@ const Dashboard: React.FC = () => {
                     <span className="text-primary font-bold">{machine.machineGroup.name}</span>
                   </div>
                 )}
-                
+
                 {machine.description && (
                   <p className="text-sm text-text-secondary mb-6 line-clamp-2 flex-grow">{machine.description}</p>
                 )}
 
                 <Link
-                  to={
-                    machine.protocol === 'RDP'
-                      ? `/rdp/${machine.id}`
-                      : `/session/${machine.id}`
-                  }
+                  to={machine.protocol === 'RDP' ? `/rdp/${machine.id}` : `/session/${machine.id}`}
                   className="btn-primary flex items-center justify-center gap-2 w-full text-sm"
                 >
                   {machine.protocol === 'RDP' ? (
@@ -214,8 +222,8 @@ const Dashboard: React.FC = () => {
                     <TerminalIcon className="w-4 h-4" />
                   )}
                   {machine.protocol === 'RDP'
-                    ? 'Ouvrir le bureau distant'
-                    : 'Ouvrir la session'}
+                    ? t('rdp.title')
+                    : t('terminal.title')}
                 </Link>
               </div>
             ))}
@@ -223,7 +231,7 @@ const Dashboard: React.FC = () => {
             {machines.length === 0 && (
               <div className="col-span-full py-20 text-center bg-background-surface border border-dashed border-border-light rounded-lg">
                 <Server className="w-12 h-12 text-neutral mx-auto mb-4 opacity-30" />
-                <p className="text-text-secondary font-medium">Aucune machine disponible pour votre compte.</p>
+                <p className="text-text-secondary font-medium">{t('dashboard.noMachines')}</p>
               </div>
             )}
           </div>

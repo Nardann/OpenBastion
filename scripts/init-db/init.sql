@@ -232,3 +232,13 @@ ALTER TABLE "_UserGroups" ADD CONSTRAINT "_UserGroups_A_fkey" FOREIGN KEY ("A") 
 
 -- AddForeignKey
 ALTER TABLE "_UserGroups" ADD CONSTRAINT "_UserGroups_B_fkey" FOREIGN KEY ("B") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- GlobalSetting (i18n default language + future global settings)
+CREATE TABLE IF NOT EXISTS "GlobalSetting" (
+    "key"   TEXT NOT NULL,
+    "value" TEXT NOT NULL,
+    CONSTRAINT "GlobalSetting_pkey" PRIMARY KEY ("key")
+);
+
+INSERT INTO "GlobalSetting" ("key", "value") VALUES ('defaultLang', 'fr')
+ON CONFLICT ("key") DO NOTHING;

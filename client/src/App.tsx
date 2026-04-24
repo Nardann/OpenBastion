@@ -3,6 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { LangProvider, useLang } from './context/LangContext';
+import AdminSettings from './pages/AdminSettings';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Terminal from './pages/Terminal';
@@ -18,6 +20,7 @@ import { Loader2, ShieldCheck, Lock } from 'lucide-react';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ children, adminOnly }) => {
   const { user, loading, sudo } = useAuth();
+  const { t } = useLang();
   const [sudoCode, setSudoCode] = React.useState('');
   const [elevating, setElevating] = React.useState(false);
   const [error, setError] = React.useState('');
@@ -38,7 +41,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
     return <Navigate to="/" />;
   }
 
-  // Handle Admin Mode Elevation (Sudo)
   if (adminOnly && user.role === 'ADMIN' && !user.isAdminMode) {
     const handleSudo = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -47,7 +49,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
       try {
         await sudo(sudoCode.trim() || undefined);
       } catch (err: any) {
-        setError(err.response?.data?.message || 'Code invalide');
+        setError(err.response?.data?.message || t('common.error'));
       } finally {
         setElevating(false);
       }
@@ -60,9 +62,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
             <div className="inline-flex p-4 rounded-full bg-primary/10 mb-4 text-primary">
               <ShieldCheck size={32} />
             </div>
-            <h2 className="text-xl font-bold text-text-main">Mode Administrateur</h2>
+            <h2 className="text-xl font-bold text-text-main">{t('sudo.title')}</h2>
             <p className="text-sm text-text-secondary mt-2">
-              Une élévation de privilèges est requise pour accéder à cette zone.
+              {t('sudo.subtitle')}
             </p>
           </div>
 
@@ -75,7 +77,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 
             <div className="space-y-2">
               <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">
-                {user.isOtpEnabled ? 'Code OTP de vérification' : 'Confirmer l\'accès'}
+                {user.isOtpEnabled ? t('sudo.otpLabel') : t('sudo.confirmLabel')}
               </label>
               <div className="relative group">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
@@ -93,7 +95,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
                   />
                 ) : (
                   <div className="p-4 bg-background-app rounded-lg border border-border-light text-center text-xs text-text-secondary">
-                    Cliquez sur le bouton ci-dessous pour activer le mode administrateur.
+                    {t('sudo.clickHint')}
                   </div>
                 )}
               </div>
@@ -107,16 +109,16 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
               {elevating ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
-                'Activer le mode admin'
+                t('sudo.activate')
               )}
             </button>
-            
+
             <button
               type="button"
               onClick={() => window.history.back()}
               className="w-full text-[10px] font-bold text-text-secondary uppercase hover:text-text-main transition-colors"
             >
-              Annuler
+              {t('sudo.cancel')}
             </button>
           </form>
         </div>
@@ -130,6 +132,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 const App: React.FC = () => {
   return (
     <ThemeProvider>
+      <LangProvider>
       <NotificationProvider>
         <AuthProvider>
           <BrowserRouter>
@@ -159,8 +162,6 @@ const App: React.FC = () => {
                 </ProtectedRoute>
               }
             />
-            
-            {/* Administration Routes */}
             <Route
               path="/profile"
               element={
@@ -182,12 +183,13 @@ const App: React.FC = () => {
               <Route path="logs" element={<AdminLogs />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="auth" element={<AdminProviders />} />
-              <Route path="sessions" element={<div className="p-8 font-sans"><h1 className="text-2xl font-bold text-text-main">Sessions Enregistrées</h1><p className="text-text-secondary mt-4">Le lecteur vidéo de sessions arrive prochainement.</p></div>} />
+              <Route path="settings" element={<AdminSettings />} />
             </Route>
             </Routes>
           </BrowserRouter>
         </AuthProvider>
       </NotificationProvider>
+      </LangProvider>
     </ThemeProvider>
   );
 };

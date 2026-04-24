@@ -14,6 +14,7 @@ import { APP_INTERCEPTOR, APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { RbacModule } from './rbac/rbac.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { SettingsModule } from './settings/settings.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import {
@@ -36,6 +37,7 @@ import {
     ScheduleModule.forRoot(),
     RbacModule,
     MonitoringModule,
+    SettingsModule,
     ThrottlerModule.forRoot([
       {
         name: 'global',

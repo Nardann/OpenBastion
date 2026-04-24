@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  UserPlus, 
+import {
+  Users,
+  UserPlus,
   Users2,
   X,
   Mail,
@@ -17,6 +17,7 @@ import {
   ShieldOff,
 } from 'lucide-react';
 import api from '../services/api';
+import { useLang } from '../context/LangContext';
 
 interface User {
   id: string;
@@ -38,11 +39,12 @@ interface Group {
 }
 
 const AdminUsers: React.FC = () => {
+  const { t } = useLang();
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'groups'>('users');
   const [loading, setLoading] = useState(true);
-  
+
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -86,7 +88,7 @@ const AdminUsers: React.FC = () => {
       setUserFormData({ email: '', username: '', password: '', role: 'USER' });
       fetchData();
     } catch (err: any) {
-      alert(err.message || 'Erreur lors de l\'enregistrement de l\'utilisateur');
+      alert(err.message || t('adminUsers.errors.saveUserError'));
     }
   };
 
@@ -103,7 +105,7 @@ const AdminUsers: React.FC = () => {
       setGroupFormData({ name: '', description: '' });
       fetchData();
     } catch (err: any) {
-      alert(err.message || 'Erreur lors de l\'enregistrement du groupe');
+      alert(err.message || t('adminUsers.errors.saveGroupError'));
     }
   };
 
@@ -114,7 +116,7 @@ const AdminUsers: React.FC = () => {
       setSelectedUserToAdd('');
       fetchData();
     } catch (err) {
-      alert('Erreur lors de l\'ajout de l\'utilisateur');
+      alert(t('adminUsers.errors.addMemberError'));
     }
   };
 
@@ -124,59 +126,58 @@ const AdminUsers: React.FC = () => {
       await api.delete(`/groups/${editingId}/users/${userId}`);
       fetchData();
     } catch (err) {
-      alert('Erreur lors de la suppression de l\'utilisateur');
+      alert(t('adminUsers.errors.removeMemberError'));
     }
   };
 
   const handleDisableOtp = async (user: any) => {
-    if (!confirm(`Désactiver l'OTP pour ${user.username || user.email} ?`))
-      return;
+    if (!confirm(`${t('adminUsers.errors.otpDisabledFor')} ${user.username || user.email} ?`)) return;
     try {
       await api.post(`/users/${user.id}/disable-otp`);
-      alert('OTP désactivé pour cet utilisateur.');
+      alert(t('adminUsers.errors.otpDisabledSuccess'));
       fetchData();
     } catch (err) {
-      alert('Erreur lors de la désactivation');
+      alert(t('adminUsers.errors.disableOtpError'));
     }
   };
 
   const deleteUser = async (id: string) => {
-    if (!confirm('Supprimer cet utilisateur ?')) return;
+    if (!confirm(t('adminUsers.errors.deleteUserConfirm'))) return;
     try {
       await api.delete(`/users/${id}`);
       fetchData();
     } catch (err) {
-      alert('Erreur suppression');
+      alert(t('adminUsers.errors.deleteError'));
     }
   };
 
   const deleteGroup = async (id: string) => {
-    if (!confirm('Supprimer ce groupe ?')) return;
+    if (!confirm(t('adminUsers.errors.deleteGroupConfirm'))) return;
     try {
       await api.delete(`/groups/${id}`);
       fetchData();
     } catch (err) {
-      alert('Erreur suppression');
+      alert(t('adminUsers.errors.deleteError'));
     }
   };
 
   const revokeUserTokens = async (id: string) => {
-    if (!confirm('Révoquer toutes les sessions de cet utilisateur ?')) return;
+    if (!confirm(t('adminUsers.errors.revokeConfirm'))) return;
     try {
       await api.post(`/users/${id}/revoke-tokens`);
-      alert('Sessions révoquées avec succès.');
+      alert(t('adminUsers.errors.revokeSuccess'));
     } catch (err) {
-      alert('Erreur lors de la révocation');
+      alert(t('adminUsers.errors.revokeError'));
     }
   };
 
   const openEditUser = (user: User) => {
     setEditingId(user.id);
-    setUserFormData({ 
-      email: user.email, 
-      username: user.username || '', 
-      password: '', 
-      role: user.role 
+    setUserFormData({
+      email: user.email,
+      username: user.username || '',
+      password: '',
+      role: user.role
     });
     setIsUserModalOpen(true);
   };
@@ -193,37 +194,36 @@ const AdminUsers: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-bold text-text-main leading-tight tracking-tight">Identités & Accès</h1>
-          <p className="text-text-secondary mt-1 text-sm">Gérez les utilisateurs, les groupes et leurs privilèges d'accès.</p>
+          <h1 className="text-2xl font-bold text-text-main leading-tight tracking-tight">{t('adminUsers.title')}</h1>
+          <p className="text-text-secondary mt-1 text-sm">{t('adminUsers.subtitle')}</p>
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 bg-background-surface p-1 rounded-lg border border-border-light w-fit shadow-sm">
-        <button 
+        <button
           onClick={() => setActiveTab('users')}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'users' ? 'bg-background-app text-primary shadow-sm' : 'text-text-secondary hover:text-text-main'}`}
         >
           <Users size={16} />
-          Utilisateurs
+          {t('adminUsers.tabUsers')}
         </button>
-        <button 
+        <button
           onClick={() => setActiveTab('groups')}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'groups' ? 'bg-background-app text-primary shadow-sm' : 'text-text-secondary hover:text-text-main'}`}
         >
           <Users2 size={16} />
-          Groupes
+          {t('adminUsers.tabGroups')}
         </button>
       </div>
 
       {activeTab === 'users' ? (
         <>
           <div className="flex justify-end">
-            <button 
+            <button
               onClick={() => { setEditingId(null); setUserFormData({ email: '', username: '', password: '', role: 'USER' }); setIsUserModalOpen(true); }}
               className="btn-primary flex items-center gap-2 text-sm shadow-sm"
             >
-              <UserPlus size={18} /> Créer un utilisateur
+              <UserPlus size={18} /> {t('adminUsers.addUser')}
             </button>
           </div>
 
@@ -232,11 +232,11 @@ const AdminUsers: React.FC = () => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="table-header border-b border-border-light bg-background-app">
-                    <th className="px-6 py-4">Utilisateur</th>
-                    <th className="px-6 py-4 text-center">Méthode</th>
-                    <th className="px-6 py-4 text-center">Groupes</th>
-                    <th className="px-6 py-4 text-center">Rôle</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
+                    <th className="px-6 py-4">{t('adminUsers.cols.user')}</th>
+                    <th className="px-6 py-4 text-center">{t('adminUsers.cols.method')}</th>
+                    <th className="px-6 py-4 text-center">{t('adminUsers.cols.groups')}</th>
+                    <th className="px-6 py-4 text-center">{t('adminUsers.cols.role')}</th>
+                    <th className="px-6 py-4 text-right">{t('adminUsers.cols.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light">
@@ -248,15 +248,15 @@ const AdminUsers: React.FC = () => {
                             {user.username?.[0] || user.email[0]}
                           </div>
                           <div>
-                            <div className="font-bold text-sm text-text-main leading-none">{user.username || 'N/A'}</div>
+                            <div className="font-bold text-sm text-text-main leading-none">{user.username || t('common.na')}</div>
                             <div className="text-[10px] text-text-secondary font-mono leading-none mt-1.5">{user.email}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                          user.authMethod === 'LOCAL' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' : 
-                          user.authMethod === 'LDAP' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' : 
+                          user.authMethod === 'LOCAL' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
+                          user.authMethod === 'LDAP' ? 'bg-orange-500/10 text-orange-500 border border-orange-500/20' :
                           'bg-purple-500/10 text-purple-500 border border-purple-500/20'
                         }`}>
                           {user.authMethod}
@@ -271,7 +271,7 @@ const AdminUsers: React.FC = () => {
                               </span>
                             ))
                           ) : (
-                            <span className="text-[10px] text-text-secondary opacity-30 italic">Aucun</span>
+                            <span className="text-[10px] text-text-secondary opacity-30 italic">{t('common.none')}</span>
                           )}
                         </div>
                       </td>
@@ -286,7 +286,7 @@ const AdminUsers: React.FC = () => {
                             <button
                               onClick={() => handleDisableOtp(user)}
                               className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all"
-                              title="Désactiver l'OTP"
+                              title={t('adminUsers.actions.disableOtp')}
                             >
                               <ShieldOff size={18} />
                             </button>
@@ -294,14 +294,14 @@ const AdminUsers: React.FC = () => {
                           <button
                             onClick={() => revokeUserTokens(user.id)}
                             className="p-2 text-text-secondary hover:text-warning hover:bg-warning/5 rounded-md transition-all"
-                            title="Révoquer les sessions"
+                            title={t('adminUsers.actions.revokeSessions')}
                           >
                             <LogOut size={18} />
                           </button>
-                          <button onClick={() => openEditUser(user)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title="Modifier">
+                          <button onClick={() => openEditUser(user)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title={t('common.edit')}>
                             <Edit2 size={18} />
                           </button>
-                          <button onClick={() => deleteUser(user.id)} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all" title="Supprimer">
+                          <button onClick={() => deleteUser(user.id)} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all" title={t('common.delete')}>
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -314,7 +314,7 @@ const AdminUsers: React.FC = () => {
             {users.length === 0 && !loading && (
               <div className="text-center py-20 bg-background-surface">
                 <Users className="mx-auto text-neutral mb-4 opacity-20" size={48} />
-                <p className="text-text-secondary text-sm italic">Aucun utilisateur configuré.</p>
+                <p className="text-text-secondary text-sm italic">{t('adminUsers.noUsers')}</p>
               </div>
             )}
           </div>
@@ -322,11 +322,11 @@ const AdminUsers: React.FC = () => {
       ) : (
         <>
           <div className="flex justify-end">
-            <button 
+            <button
               onClick={() => { setEditingId(null); setGroupFormData({ name: '', description: '' }); setIsGroupModalOpen(true); }}
               className="btn-primary flex items-center gap-2 text-sm shadow-sm"
             >
-              <FolderPlus size={18} /> Nouveau groupe
+              <FolderPlus size={18} /> {t('adminUsers.addGroup')}
             </button>
           </div>
 
@@ -342,7 +342,7 @@ const AdminUsers: React.FC = () => {
                       <div>
                         <h3 className="font-bold text-text-main truncate leading-none">{group.name}</h3>
                         <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold opacity-60">
-                          {group._count.users} membre{group._count.users !== 1 ? 's' : ''}
+                          {group._count.users} {group._count.users !== 1 ? t('adminUsers.memberPlural') : t('adminUsers.memberSingular')}
                         </p>
                       </div>
                     </div>
@@ -361,10 +361,10 @@ const AdminUsers: React.FC = () => {
                         </div>
                       ))
                     ) : (
-                      <p className="text-[11px] text-text-secondary opacity-40 italic">Aucun membre dans ce groupe</p>
+                      <p className="text-[11px] text-text-secondary opacity-40 italic">{t('adminUsers.noMembers')}</p>
                     )}
                     {group._count.users > 3 && (
-                      <p className="text-[9px] text-primary font-bold uppercase tracking-tighter mt-2">+{group._count.users - 3} autre{group._count.users - 3 !== 1 ? 's' : ''}</p>
+                      <p className="text-[9px] text-primary font-bold uppercase tracking-tighter mt-2">+{group._count.users - 3}</p>
                     )}
                   </div>
                 </div>
@@ -374,12 +374,12 @@ const AdminUsers: React.FC = () => {
                     onClick={() => openEditGroup(group)}
                     className="flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase bg-background-surface text-text-secondary hover:text-primary hover:border-primary/50 border border-border-light rounded-md transition-all shadow-sm"
                   >
-                    <Users size={14} /> Gérer les membres
+                    <Users size={14} /> {t('adminUsers.manageMembers')}
                   </button>
                   <button
                     onClick={() => deleteGroup(group.id)}
                     className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all"
-                    title="Supprimer le groupe"
+                    title={t('adminUsers.deleteGroupLabel')}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -391,7 +391,7 @@ const AdminUsers: React.FC = () => {
           {groups.length === 0 && !loading && (
             <div className="text-center py-20 card-subtle bg-background-surface">
               <Users2 className="mx-auto text-neutral mb-4 opacity-20" size={48} />
-              <p className="text-text-secondary text-sm italic">Aucun groupe d'utilisateurs configuré.</p>
+              <p className="text-text-secondary text-sm italic">{t('adminUsers.noGroups')}</p>
             </div>
           )}
         </>
@@ -407,8 +407,8 @@ const AdminUsers: React.FC = () => {
                   {editingId ? <Edit2 size={24} /> : <UserPlus size={24} />}
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-text-main leading-none">{editingId ? 'Modifier Profil' : 'Nouvel Utilisateur'}</h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold">Gestion des accès locaux</p>
+                  <h2 className="text-xl font-bold text-text-main leading-none">{editingId ? t('adminUsers.modal.editTitle') : t('adminUsers.modal.newTitle')}</h2>
+                  <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold">{t('adminUsers.modal.subtitle')}</p>
                 </div>
               </div>
               <button onClick={() => setIsUserModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={24} /></button>
@@ -416,27 +416,27 @@ const AdminUsers: React.FC = () => {
 
             <form onSubmit={handleCreateUser} className="space-y-6">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Adresse Email</label>
+                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.email')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <Mail size={16} />
                   </div>
-                  <input required type="email" className="form-input input-with-icon h-11 text-sm" placeholder="user@domain.com" value={userFormData.email} onChange={e => setUserFormData({...userFormData, email: e.target.value})} />
+                  <input required type="email" className="form-input input-with-icon h-11 text-sm" placeholder={t('adminUsers.modal.emailPlaceholder')} value={userFormData.email} onChange={e => setUserFormData({...userFormData, email: e.target.value})} />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Nom d'utilisateur</label>
+                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.username')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <UserIcon size={16} />
                   </div>
-                  <input type="text" className="form-input input-with-icon h-11 text-sm" placeholder="Pseudo..." value={userFormData.username} onChange={e => setUserFormData({...userFormData, username: e.target.value})} />
+                  <input type="text" className="form-input input-with-icon h-11 text-sm" placeholder={t('adminUsers.modal.usernamePlaceholder')} value={userFormData.username} onChange={e => setUserFormData({...userFormData, username: e.target.value})} />
                 </div>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{editingId ? 'Changer le mot de passe (laisser vide)' : 'Mot de passe initial'}</label>
+                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{editingId ? t('adminUsers.modal.passwordEdit') : t('adminUsers.modal.passwordNew')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <Lock size={16} />
@@ -446,17 +446,17 @@ const AdminUsers: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Privilèges Administratifs</label>
+                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.roleLabel')}</label>
                 <select className="form-input h-11 text-sm font-medium" value={userFormData.role} onChange={e => setUserFormData({...userFormData, role: e.target.value})}>
-                  <option value="USER">Utilisateur Standard</option>
-                  <option value="ADMIN">Administrateur Système</option>
+                  <option value="USER">{t('adminUsers.modal.roleUser')}</option>
+                  <option value="ADMIN">{t('adminUsers.modal.roleAdmin')}</option>
                 </select>
               </div>
 
               <div className="flex justify-end gap-3 pt-6 border-t border-border-light">
-                <button type="button" onClick={() => setIsUserModalOpen(false)} className="btn-secondary px-8 py-3 text-xs font-bold uppercase tracking-widest shadow-sm">Annuler</button>
+                <button type="button" onClick={() => setIsUserModalOpen(false)} className="btn-secondary px-8 py-3 text-xs font-bold uppercase tracking-widest shadow-sm">{t('common.cancel')}</button>
                 <button type="submit" className="btn-primary px-10 py-3 text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary/20">
-                  {editingId ? 'Sauvegarder' : 'Créer le profil'}
+                  {editingId ? t('common.save') : t('adminUsers.modal.createButton')}
                 </button>
               </div>
             </form>
@@ -475,8 +475,8 @@ const AdminUsers: React.FC = () => {
                     <FolderPlus size={24} />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-text-main leading-none">{editingId ? 'Paramètres Groupe' : 'Nouveau Groupe'}</h2>
-                    <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold">Rôles et permissions</p>
+                    <h2 className="text-xl font-bold text-text-main leading-none">{editingId ? t('adminUsers.modal.groupEditTitle') : t('adminUsers.addGroup')}</h2>
+                    <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold">{t('adminUsers.modal.groupSubtitle')}</p>
                   </div>
                 </div>
                 {!editingId && <button onClick={() => setIsGroupModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={24} /></button>}
@@ -484,27 +484,27 @@ const AdminUsers: React.FC = () => {
 
               <form onSubmit={handleCreateGroup} className="space-y-6">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Nom du Groupe</label>
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.groupName')}</label>
                   <div className="relative group">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                       <Users2 size={16} />
                     </div>
-                    <input required type="text" placeholder="ex: Administrateurs Réseau" className="form-input input-with-icon h-11 text-sm" value={groupFormData.name} onChange={e => setGroupFormData({...groupFormData, name: e.target.value})} />
+                    <input required type="text" placeholder={t('adminUsers.modal.groupNamePlaceholder')} className="form-input input-with-icon h-11 text-sm" value={groupFormData.name} onChange={e => setGroupFormData({...groupFormData, name: e.target.value})} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Note / Description</label>
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.groupDescription')}</label>
                   <div className="relative group">
                     <div className="absolute left-3.5 top-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                       <FileText size={16} />
                     </div>
-                    <textarea className="form-input input-with-icon w-full h-24 py-3 resize-none text-sm" placeholder="Description du rôle de ce groupe..." value={groupFormData.description} onChange={e => setGroupFormData({...groupFormData, description: e.target.value})}></textarea>
+                    <textarea className="form-input input-with-icon w-full h-24 py-3 resize-none text-sm" placeholder={t('adminUsers.modal.groupDescPlaceholder')} value={groupFormData.description} onChange={e => setGroupFormData({...groupFormData, description: e.target.value})}></textarea>
                   </div>
                 </div>
                 <div className="flex justify-end gap-3 pt-6 border-t border-border-light">
-                  <button type="button" onClick={() => setIsGroupModalOpen(false)} className="btn-secondary px-6 py-2 text-xs font-bold uppercase tracking-widest">Annuler</button>
+                  <button type="button" onClick={() => setIsGroupModalOpen(false)} className="btn-secondary px-6 py-2 text-xs font-bold uppercase tracking-widest">{t('common.cancel')}</button>
                   <button type="submit" className="btn-primary px-8 py-2 text-xs font-bold uppercase tracking-widest">
-                    {editingId ? 'Enregistrer' : 'Créer'}
+                    {editingId ? t('common.save') : t('common.create')}
                   </button>
                 </div>
               </form>
@@ -515,18 +515,18 @@ const AdminUsers: React.FC = () => {
                 <div className="flex justify-between items-center mb-8">
                   <div className="flex items-center gap-3">
                     <Users size={20} className="text-primary" />
-                    <h3 className="font-bold text-text-main">Membres du groupe</h3>
+                    <h3 className="font-bold text-text-main">{t('adminUsers.manageMembers')}</h3>
                   </div>
                   <button onClick={() => setIsGroupModalOpen(false)} className="p-2 hover:bg-background-surface rounded-full text-text-secondary transition-colors hidden md:flex"><X size={24} /></button>
                 </div>
 
                 <div className="flex gap-2 mb-6">
-                  <select 
+                  <select
                     className="form-input flex-1 h-11 text-sm font-medium"
                     value={selectedUserToAdd}
                     onChange={e => setSelectedUserToAdd(e.target.value)}
                   >
-                    <option value="">Ajouter un membre...</option>
+                    <option value="">{t('adminUsers.modal.groupAddMember')}</option>
                     {users
                       .filter(u => !currentEditingGroup?.users.some(m => m.id === u.id))
                       .map(u => (
@@ -534,7 +534,7 @@ const AdminUsers: React.FC = () => {
                       ))
                     }
                   </select>
-                  <button 
+                  <button
                     onClick={handleAddUserToGroup}
                     disabled={!selectedUserToAdd}
                     className="btn-primary h-11 px-4 disabled:opacity-50 transition-all active:scale-95"
@@ -552,10 +552,10 @@ const AdminUsers: React.FC = () => {
                         </div>
                         <span className="text-sm font-bold text-text-main truncate max-w-[150px]">{member.username || member.email}</span>
                       </div>
-                      <button 
+                      <button
                         onClick={() => handleRemoveUserFromGroup(member.id)}
                         className="opacity-0 group-hover/item:opacity-100 p-1.5 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-lg transition-all"
-                        title="Retirer du groupe"
+                        title={t('adminUsers.modal.groupRemoveMember')}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -564,7 +564,7 @@ const AdminUsers: React.FC = () => {
                   {currentEditingGroup?.users.length === 0 && (
                     <div className="text-center py-12 border-2 border-dashed border-border-light rounded-2xl">
                       <Users size={32} className="mx-auto text-text-secondary opacity-10 mb-2" />
-                      <p className="text-xs text-text-secondary italic">Ce groupe est vide.</p>
+                      <p className="text-xs text-text-secondary italic">{t('adminUsers.modal.groupEmpty')}</p>
                     </div>
                   )}
                 </div>
