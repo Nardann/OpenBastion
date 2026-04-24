@@ -1,12 +1,4 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 # OpenBastion
-=======
-# Open-Bastion
->>>>>>> Stashed changes
-=======
-# Open-Bastion
->>>>>>> Stashed changes
 
 A modern and sovereign Bastion/PAM (Privileged Access Management) system written in Node.js and React.
 
