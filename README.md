@@ -112,6 +112,8 @@ Additional languages can be added by creating translation files in `client/src/l
 | `OIDC_ISSUER` | - | OIDC provider issuer URL |
 | `OIDC_CLIENT_ID` | - | OIDC client ID |
 | `OIDC_CLIENT_SECRET` | - | OIDC client secret |
+| `NODE_ENV` | `production / development` | Bypass ssl verification | 
+
 
 ## 🚀 Development
 
