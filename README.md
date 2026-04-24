@@ -144,4 +144,4 @@ Contributions, bug reports, and feature requests are welcome. Please open an iss
 
 ## 📞 Support
 
-For issues, feature requests, or security concerns, please contact open an issue on GitHub.
+For issues, feature requests, or security concerns, please open an issue on GitHub.
