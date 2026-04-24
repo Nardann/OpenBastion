@@ -1,5 +1,9 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # OpenBastion
+=======
+# Open-Bastion
+>>>>>>> Stashed changes
 =======
 # Open-Bastion
 >>>>>>> Stashed changes
