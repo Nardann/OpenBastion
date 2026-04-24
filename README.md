@@ -1,4 +1,4 @@
-# Bastion Node
+# OpenBastion
 
 Un Bastion de Sécurité (PAM) moderne et souverain, écrit en Node.js et React.
 
