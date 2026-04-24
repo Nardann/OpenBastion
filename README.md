@@ -34,28 +34,6 @@ A modern and sovereign Bastion/PAM (Privileged Access Management) system written
 
 2. **Configuration**
    Create a `.env` file at the root (based on `.env.example`):
-   ```env
-   # Backend
-   BACKEND_PORT=3000
-   DATABASE_URL=postgresql://user:password@postgres:5432/openbastion
-   JWT_SECRET=your-secret-key
-   
-   # Features
-   ENABLE_RDP=true          # Enable RDP support (optional)
-   DEFAULT_LANG=fr          # Default language: 'fr' or 'en'
-   
-   # Admin credentials
-   ADMIN_PASSWORD=YourSecurePassword
-   
-   # Optional: LDAP/AD configuration
-   LDAP_URL=ldap://domain.local:389
-   LDAP_BASE_DN=dc=domain,dc=local
-   
-   # Optional: OIDC/SSO configuration
-   OIDC_ISSUER=https://keycloak.local/realms/bastion
-   OIDC_CLIENT_ID=bastion-client
-   OIDC_CLIENT_SECRET=your-client-secret
-   ```
 
 3. **Launch with Docker**
    ```bash
@@ -156,10 +134,6 @@ npm run dev
 npx prisma migrate dev
 ```
 
-## 📝 License
-
-Proprietary - All rights reserved
-
 ## 👥 Author
 
 Authored and maintained by **Nardann**
@@ -170,4 +144,4 @@ Contributions, bug reports, and feature requests are welcome. Please open an iss
 
 ## 📞 Support
 
-For issues, feature requests, or security concerns, please contact the development team or open an issue on GitHub.
+For issues, feature requests, or security concerns, please contact open an issue on GitHub.
