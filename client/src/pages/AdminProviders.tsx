@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Database, 
+import {
+  Database,
   Globe,
   Save,
   AlertCircle,
@@ -9,6 +9,7 @@ import {
   Loader2
 } from 'lucide-react';
 import api from '../services/api';
+import { useLang } from '../context/LangContext';
 
 interface Provider {
   id: string;
@@ -19,6 +20,7 @@ interface Provider {
 }
 
 const AdminProviders: React.FC = () => {
+  const { t } = useLang();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -70,18 +72,20 @@ const AdminProviders: React.FC = () => {
     try {
       setSaving(type);
       setMessage(null);
-      
-      // Use upsert endpoint which handles both create and update
+
       await api.post('/auth/providers/upsert', {
         type,
         config,
         enabled: true
       });
-      
-      setMessage({ type: 'success', text: `Configuration ${type} enregistrée avec succès.` });
+
+      setMessage({
+        type: 'success',
+        text: type === 'LDAP' ? t('adminProviders.ldap.saveSuccess') : t('adminProviders.oidc.saveSuccess')
+      });
       fetchProviders();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Erreur lors de l\'enregistrement.' });
+      setMessage({ type: 'error', text: err.message || t('adminProviders.saveError') });
     } finally {
       setSaving(null);
     }
@@ -117,8 +121,8 @@ const AdminProviders: React.FC = () => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-text-main">Authentification Externe</h1>
-          <p className="text-text-secondary mt-1">Configurez vos annuaires LDAP/AD et vos fournisseurs d'identité SSO.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-text-main">{t('adminProviders.title')}</h1>
+          <p className="text-text-secondary mt-1">{t('adminProviders.subtitle')}</p>
         </div>
       </div>
 
@@ -137,69 +141,69 @@ const AdminProviders: React.FC = () => {
           <div className="p-6 border-b border-border-light bg-background-app flex justify-between items-center">
             <div className="flex items-center gap-3">
               <Database className="text-orange-500" size={24} />
-              <h2 className="text-xl font-bold text-text-main">Annuaire LDAP / AD</h2>
+              <h2 className="text-xl font-bold text-text-main">{t('adminProviders.ldap.title')}</h2>
             </div>
-            <button 
+            <button
               onClick={() => toggleProvider('LDAP', !!ldapProvider?.enabled)}
               className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider transition-all ${
-                ldapProvider?.enabled 
-                  ? 'bg-green-100 text-green-700 border border-green-200' 
+                ldapProvider?.enabled
+                  ? 'bg-green-100 text-green-700 border border-green-200'
                   : 'bg-background-surface text-text-secondary border border-border-light'
               }`}
             >
-              {ldapProvider?.enabled ? 'Actif' : 'Inactif'}
+              {ldapProvider?.enabled ? t('adminProviders.ldap.active') : t('adminProviders.ldap.inactive')}
             </button>
           </div>
           <div className="p-6 space-y-4 flex-1">
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">URL du Serveur</label>
-              <input 
-                type="text" 
-                placeholder="ldap://domain.local:389" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.ldap.url')}</label>
+              <input
+                type="text"
+                placeholder={t('adminProviders.ldap.urlPlaceholder')}
+                className="form-input text-sm"
                 value={ldapConfig.url}
                 onChange={e => setLdapConfig({...ldapConfig, url: e.target.value})}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Base de recherche (Search Base)</label>
-              <input 
-                type="text" 
-                placeholder="dc=domain,dc=local" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.ldap.baseDn')}</label>
+              <input
+                type="text"
+                placeholder={t('adminProviders.ldap.baseDnPlaceholder')}
+                className="form-input text-sm"
                 value={ldapConfig.searchBase}
                 onChange={e => setLdapConfig({...ldapConfig, searchBase: e.target.value})}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Compte de liaison (Bind DN)</label>
-              <input 
-                type="text" 
-                placeholder="cn=admin,dc=domain,dc=local" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.ldap.bindDn')}</label>
+              <input
+                type="text"
+                placeholder={t('adminProviders.ldap.bindDnPlaceholder')}
+                className="form-input text-sm"
                 value={ldapConfig.bindDn}
                 onChange={e => setLdapConfig({...ldapConfig, bindDn: e.target.value})}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Mot de passe de liaison</label>
-              <input 
-                type="password" 
-                placeholder="••••••••••••••••" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.ldap.bindPassword')}</label>
+              <input
+                type="password"
+                placeholder="••••••••••••••••"
+                className="form-input text-sm"
                 value={ldapConfig.bindPassword}
                 onChange={e => setLdapConfig({...ldapConfig, bindPassword: e.target.value})}
               />
             </div>
           </div>
           <div className="p-4 bg-background-app border-t border-border-light">
-            <button 
+            <button
               onClick={() => handleSave('LDAP', ldapConfig)}
               disabled={!!saving}
               className="btn-primary w-full flex items-center justify-center gap-2"
             >
               {saving === 'LDAP' ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              Enregistrer la configuration
+              {t('adminProviders.ldap.save')}
             </button>
           </div>
         </div>
@@ -209,71 +213,71 @@ const AdminProviders: React.FC = () => {
           <div className="p-6 border-b border-border-light bg-background-app flex justify-between items-center">
             <div className="flex items-center gap-3">
               <Globe className="text-purple-500" size={24} />
-              <h2 className="text-xl font-bold text-text-main">OpenID Connect (SSO)</h2>
+              <h2 className="text-xl font-bold text-text-main">{t('adminProviders.oidc.title')}</h2>
             </div>
-            <button 
+            <button
               onClick={() => toggleProvider('OIDC', !!oidcProvider?.enabled)}
               className={`px-3 py-1 text-[10px] font-bold rounded-full uppercase tracking-wider transition-all ${
-                oidcProvider?.enabled 
-                  ? 'bg-green-100 text-green-700 border border-green-200' 
+                oidcProvider?.enabled
+                  ? 'bg-green-100 text-green-700 border border-green-200'
                   : 'bg-background-surface text-text-secondary border border-border-light'
               }`}
             >
-              {oidcProvider?.enabled ? 'Actif' : 'Inactif'}
+              {oidcProvider?.enabled ? t('adminProviders.ldap.active') : t('adminProviders.ldap.inactive')}
             </button>
           </div>
           <div className="p-6 space-y-4 flex-1">
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">URL de l'Issuer</label>
-              <input 
-                type="text" 
-                placeholder="https://keycloak.local/realms/bastion" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.oidc.issuer')}</label>
+              <input
+                type="text"
+                placeholder={t('adminProviders.oidc.issuerPlaceholder')}
+                className="form-input text-sm"
                 value={oidcConfig.issuer}
                 onChange={e => setOidcConfig({...oidcConfig, issuer: e.target.value})}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Client ID</label>
-              <input 
-                type="text" 
-                placeholder="bastion-client" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.oidc.clientId')}</label>
+              <input
+                type="text"
+                placeholder={t('adminProviders.oidc.clientIdPlaceholder')}
+                className="form-input text-sm"
                 value={oidcConfig.clientId}
                 onChange={e => setOidcConfig({...oidcConfig, clientId: e.target.value})}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Client Secret</label>
-              <input 
-                type="password" 
-                placeholder="••••••••••••••••" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.oidc.clientSecret')}</label>
+              <input
+                type="password"
+                placeholder="••••••••••••••••"
+                className="form-input text-sm"
                 value={oidcConfig.clientSecret}
                 onChange={e => setOidcConfig({...oidcConfig, clientSecret: e.target.value})}
               />
             </div>
             <div className="space-y-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">URL de redirection (Callback)</label>
-              <input 
-                type="text" 
-                className="form-input text-sm" 
+              <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('adminProviders.oidc.callbackUrl')}</label>
+              <input
+                type="text"
+                className="form-input text-sm"
                 value={oidcConfig.callbackUrl}
                 onChange={e => setOidcConfig({...oidcConfig, callbackUrl: e.target.value})}
               />
               <p className="text-[10px] text-text-secondary italic">
-                Pensez à remplacer <strong>localhost</strong> par l'IP de cette machine si vous utilisez un SSO externe.
+                {t('adminProviders.oidc.callbackHint')}
               </p>
             </div>
           </div>
           <div className="p-4 bg-background-app border-t border-border-light">
-            <button 
+            <button
               onClick={() => handleSave('OIDC', oidcConfig)}
               disabled={!!saving}
               className="btn-primary w-full flex items-center justify-center gap-2"
             >
               {saving === 'OIDC' ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-              Enregistrer la configuration
+              {t('adminProviders.oidc.save')}
             </button>
           </div>
         </div>
@@ -282,9 +286,9 @@ const AdminProviders: React.FC = () => {
       <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 flex gap-3 text-primary">
         <AlertCircle size={20} />
         <div className="space-y-1">
-          <p className="text-sm font-bold uppercase tracking-wider">Provisioning Just-In-Time (JIT)</p>
+          <p className="text-sm font-bold uppercase tracking-wider">{t('adminProviders.oidc.jit')}</p>
           <p className="text-xs opacity-80">
-            Les utilisateurs s'authentifiant avec succès via ces services seront automatiquement créés dans Open-Bastion avec le rôle **USER**.
+            {t('adminProviders.jitDesc')}
           </p>
         </div>
       </div>

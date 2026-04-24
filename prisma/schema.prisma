@@ -188,6 +188,11 @@ model AuditLog {
   @@index([userId])
 }
 
+model GlobalSetting {
+  key   String @id
+  value String
+}
+
 model BlacklistedToken {
   id        String   @id @default(uuid())
   token     String   @unique

@@ -6,11 +6,13 @@ import { WebLinksAddon } from 'xterm-addon-web-links';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { Terminal as TerminalIcon, Shield, ChevronLeft, Loader2, ClipboardX, AlertCircle } from 'lucide-react';
+import { useLang } from '../context/LangContext';
 import 'xterm/css/xterm.css';
 
 const Terminal: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
+  const { t } = useLang();
   const navigate = useNavigate();
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -18,9 +20,7 @@ const Terminal: React.FC = () => {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error' | 'closed'>('connecting');
   const [error, setError] = useState<string | null>(null);
   const [allowCopyPaste, setAllowCopyPaste] = useState(true);
-  
-  // Use a ref to store the current allowCopyPaste value for event listeners 
-  // without triggering useEffect re-runs
+
   const allowCopyPasteRef = useRef(true);
 
   useEffect(() => {
@@ -36,7 +36,6 @@ const Terminal: React.FC = () => {
       }
     });
 
-    // BLOCK KEYBOARD PASTE (Ctrl+V, Shift+Insert)
     term.attachCustomKeyEventHandler((event) => {
       if (!allowCopyPasteRef.current) {
         if ((event.ctrlKey || event.metaKey) && event.key === 'v') return false;
@@ -59,7 +58,7 @@ const Terminal: React.FC = () => {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      socket.emit('start-session', { 
+      socket.emit('start-session', {
         machineId: id,
         cols: term.cols,
         rows: term.rows
@@ -99,7 +98,6 @@ const Terminal: React.FC = () => {
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
 
-    // AGGRESSIVE CLIPBOARD BLOCKING
     const blockEvent = (e: Event) => {
       if (!allowCopyPasteRef.current) {
         e.preventDefault();
@@ -144,7 +142,7 @@ const Terminal: React.FC = () => {
           </button>
           <div className="flex items-center gap-2">
             <TerminalIcon size={18} className="text-primary" />
-            <span className="font-mono text-sm font-bold uppercase tracking-tight">Bastion Secure Shell</span>
+            <span className="font-mono text-sm font-bold uppercase tracking-tight">{t('terminal.title')}</span>
           </div>
           <div className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-green-500 animate-pulse' : 'bg-orange-500'}`} />
         </div>
@@ -152,7 +150,7 @@ const Terminal: React.FC = () => {
         <div className="flex items-center gap-4">
           {!allowCopyPaste && (
             <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 border border-red-500/20 rounded-full text-red-500 text-[10px] font-bold uppercase animate-pulse">
-              <ClipboardX size={12} /> Mode Isolé
+              <ClipboardX size={12} /> {t('terminal.isolatedMode')}
             </div>
           )}
           <div className="flex items-center gap-2 text-xs opacity-50">
@@ -172,9 +170,9 @@ const Terminal: React.FC = () => {
           <div className="absolute inset-0 z-20 flex items-center justify-center backdrop-blur-md">
             <div className="bg-slate-800 border border-red-500/50 p-8 rounded-2xl max-w-md text-center space-y-4 shadow-2xl">
               <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
-              <h2 className="text-xl font-bold">Échec de session</h2>
+              <h2 className="text-xl font-bold">{t('terminal.sessionError')}</h2>
               <p className="text-sm font-mono opacity-70">{error}</p>
-              <button onClick={() => navigate('/')} className="w-full py-2 bg-primary text-white rounded-lg font-bold">Quitter</button>
+              <button onClick={() => navigate('/')} className="w-full py-2 bg-primary text-white rounded-lg font-bold">{t('terminal.quit')}</button>
             </div>
           </div>
         )}

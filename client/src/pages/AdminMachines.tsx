@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Server, 
-  ShieldCheck, 
-  X, 
-  User as UserIcon, 
-  Users2, 
-  Edit2, 
-  ShieldAlert, 
-  ToggleLeft, 
+import {
+  Plus,
+  Trash2,
+  Server,
+  ShieldCheck,
+  X,
+  User as UserIcon,
+  Users2,
+  Edit2,
+  ShieldAlert,
+  ToggleLeft,
   ToggleRight,
   Search,
   FolderPlus,
@@ -19,8 +19,10 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import api from '../services/api';
+import { useLang } from '../context/LangContext';
 
 const AdminMachines = () => {
+  const { t } = useLang();
   const [machines, setMachines] = useState<any[]>([]);
   const [machineGroups, setMachineGroups] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'machines' | 'groups'>('machines');
@@ -29,7 +31,7 @@ const AdminMachines = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
+
   const [formData, setFormData] = useState({
     name: '',
     ip: '',
@@ -44,18 +46,13 @@ const AdminMachines = () => {
     allowRebound: false,
     allowCopyPaste: false,
     machineGroupId: '',
-    // RDP-only fields (ignored when protocol === 'SSH')
     rdpSecurity: 'NLA' as 'ANY' | 'RDP' | 'TLS' | 'NLA',
     rdpIgnoreCert: false,
     rdpDomain: ''
   });
 
-  const [groupFormData, setGroupFormData] = useState({
-    name: '',
-    description: ''
-  });
+  const [groupFormData, setGroupFormData] = useState({ name: '', description: '' });
 
-  // Permissions state
   const [isPermModalOpen, setIsPermModalOpen] = useState(false);
   const [selectedMachine, setSelectedMachine] = useState<any>(null);
   const [selectedMachineGroup, setSelectedMachineGroup] = useState<any>(null);
@@ -95,8 +92,8 @@ const AdminMachines = () => {
 
   const fetchPermissions = async (machineId?: string, groupId?: string) => {
     try {
-      const endpoint = machineId 
-        ? `/permissions/machine/${machineId}` 
+      const endpoint = machineId
+        ? `/permissions/machine/${machineId}`
         : `/permissions/machine-group/${groupId}`;
       const res = await api.get(endpoint);
       setPermissions(res.data as any);
@@ -108,7 +105,6 @@ const AdminMachines = () => {
     api.get('/features').then(res => setRdpEnabled((res.data as any).rdp === true)).catch(() => {});
   }, [activeTab]);
 
-  // Handle Autocomplete Search
   useEffect(() => {
     if (searchQuery.length < 2) {
       setSuggestions([]);
@@ -120,13 +116,13 @@ const AdminMachines = () => {
         const endpoint = permFormData.targetType === 'user' ? '/users' : '/groups';
         const res = await api.get(endpoint);
         const all = res.data as any[];
-        
+
         const filtered = all.filter(item => {
-          const label = permFormData.targetType === 'user' 
-            ? `${item.username} ${item.email}` 
+          const label = permFormData.targetType === 'user'
+            ? `${item.username} ${item.email}`
             : item.name;
           return label.toLowerCase().includes(searchQuery.toLowerCase());
-        }).slice(0, 5); // Limit to 5 suggestions
+        }).slice(0, 5);
 
         setSuggestions(filtered.map(item => ({
           id: item.id,
@@ -141,7 +137,7 @@ const AdminMachines = () => {
 
   const probeSshFingerprint = async () => {
     if (!formData.ip) {
-      alert("Veuillez saisir l'adresse IP avant de vérifier l'empreinte.");
+      alert(t('adminMachines.modal.fingerprintIpRequired'));
       return;
     }
     setProbing(true);
@@ -152,7 +148,7 @@ const AdminMachines = () => {
       });
       setFormData({ ...formData, sshFingerprint: res.data.fingerprint });
     } catch (err: any) {
-      alert("Impossible de récupérer l'empreinte. Vérifiez l'adresse IP et que le port SSH est ouvert.");
+      alert(t('adminMachines.modal.fingerprintError'));
     } finally {
       setProbing(false);
     }
@@ -161,7 +157,6 @@ const AdminMachines = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Whitelist only fields expected by the backend DTO
       const submitData: any = {
         name: formData.name,
         ip: formData.ip,
@@ -183,10 +178,7 @@ const AdminMachines = () => {
         if (formData.rdpDomain) submitData.rdpDomain = formData.rdpDomain;
       }
 
-      if (formData.machineGroupId) {
-        submitData.machineGroupId = formData.machineGroupId;
-      }
-
+      if (formData.machineGroupId) submitData.machineGroupId = formData.machineGroupId;
       if (formData.password) submitData.password = formData.password;
 
       if (editingId) {
@@ -205,7 +197,7 @@ const AdminMachines = () => {
       });
       fetchData();
     } catch (err: any) {
-      alert(err.message || 'Erreur lors de l\'enregistrement');
+      alert(err.message || t('adminMachines.errors.saveError'));
     }
   };
 
@@ -222,25 +214,25 @@ const AdminMachines = () => {
       setGroupFormData({ name: '', description: '' });
       fetchGroups();
     } catch (error) {
-      alert('Erreur lors de l\'enregistrement du groupe');
+      alert(t('adminMachines.errors.saveError'));
     }
   };
 
   const deleteMachine = async (id: string) => {
-    if (!confirm('Êtes-vous sûr de vouloir supprimer cette machine ?')) return;
+    if (!confirm(t('adminMachines.errors.deleteMachineConfirm'))) return;
     try {
       await api.delete(`/machines/${id}`);
       fetchMachines();
-    } catch (err) { alert('Erreur lors de la suppression'); }
+    } catch (err) { alert(t('adminMachines.errors.deleteError')); }
   };
 
   const deleteGroup = async (id: string) => {
-    if (!confirm('Supprimer ce groupe ? Les machines resteront mais seront sans groupe.')) return;
+    if (!confirm(t('adminMachines.errors.deleteGroupConfirm'))) return;
     try {
       await api.delete(`/machine-groups/${id}`);
       fetchGroups();
     } catch (error) {
-      alert('Erreur lors de la suppression');
+      alert(t('adminMachines.errors.deleteError'));
     }
   };
 
@@ -269,10 +261,7 @@ const AdminMachines = () => {
 
   const openEditGroup = (group: any) => {
     setEditingId(group.id);
-    setGroupFormData({
-      name: group.name,
-      description: group.description || ''
-    });
+    setGroupFormData({ name: group.name, description: group.description || '' });
     setIsGroupModalOpen(true);
   };
 
@@ -295,13 +284,9 @@ const AdminMachines = () => {
     if (!selectedTarget) return;
 
     try {
-      const data: any = {
-        level: permFormData.level,
-      };
-
+      const data: any = { level: permFormData.level };
       if (permFormData.targetType === 'user') data.userId = selectedTarget.id;
       else data.groupId = selectedTarget.id;
-
       if (selectedMachine) data.machineId = selectedMachine.id;
       else data.machineGroupId = selectedMachineGroup.id;
 
@@ -309,14 +294,14 @@ const AdminMachines = () => {
       setSelectedTarget(null);
       setSearchQuery('');
       fetchPermissions(selectedMachine?.id, selectedMachineGroup?.id);
-    } catch (err: any) { alert(err.message || 'Erreur lors de l\'attribution'); }
+    } catch (err: any) { alert(err.message || t('adminMachines.errors.addError')); }
   };
 
   const deletePermission = async (id: string) => {
     try {
       await api.delete(`/permissions/${id}`);
       fetchPermissions(selectedMachine?.id, selectedMachineGroup?.id);
-    } catch (err) { alert('Erreur lors de la suppression'); }
+    } catch (err) { alert(t('adminMachines.errors.deleteError')); }
   };
 
   const handleAddMachineToGroup = async () => {
@@ -327,7 +312,7 @@ const AdminMachines = () => {
       fetchGroups();
       fetchMachines();
     } catch (error) {
-      alert('Erreur lors de l\'ajout');
+      alert(t('adminMachines.errors.addError'));
     }
   };
 
@@ -337,7 +322,7 @@ const AdminMachines = () => {
       fetchGroups();
       fetchMachines();
     } catch (error) {
-      alert('Erreur lors du retrait');
+      alert(t('adminMachines.errors.removeError'));
     }
   };
 
@@ -347,12 +332,11 @@ const AdminMachines = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">Gestion des Machines</h1>
-          <p className="text-text-secondary mt-1 text-sm">Gérez vos serveurs cibles et configurez les accès sécurisés.</p>
+          <h1 className="text-2xl font-bold text-text-main">{t('adminMachines.title')}</h1>
+          <p className="text-text-secondary mt-1 text-sm">{t('adminMachines.subtitle')}</p>
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-2 bg-background-surface p-1 rounded-lg border border-border-light w-fit">
         <button
           onClick={() => setActiveTab('machines')}
@@ -360,7 +344,7 @@ const AdminMachines = () => {
         >
           <div className="flex items-center gap-2">
             <Server size={16} />
-            Machines
+            {t('adminMachines.tabMachines')}
           </div>
         </button>
         <button
@@ -369,17 +353,16 @@ const AdminMachines = () => {
         >
           <div className="flex items-center gap-2">
             <FolderOpen size={16} />
-            Groupes
+            {t('adminMachines.tabGroups')}
           </div>
         </button>
       </div>
 
-      {/* MACHINES TAB */}
       {activeTab === 'machines' && (
         <>
           <div className="flex justify-end">
             <button onClick={() => { setEditingId(null); setFormData({ name: '', ip: '', port: 22, protocol: 'SSH', description: '', sshFingerprint: '', username: '', password: '', privateKey: '', allowTunneling: false, allowRebound: false, allowCopyPaste: false, machineGroupId: '', rdpSecurity: 'NLA', rdpIgnoreCert: false, rdpDomain: '' }); setIsModalOpen(true); }} className="btn-primary flex items-center gap-2 text-sm shadow-sm">
-              <Plus size={18} /> Ajouter une machine
+              <Plus size={18} /> {t('adminMachines.addMachine')}
             </button>
           </div>
 
@@ -388,10 +371,10 @@ const AdminMachines = () => {
               <table className="w-full text-left border-collapse">
                 <thead className="table-header border-b border-border-light">
                   <tr>
-                    <th className="px-6 py-4">Nom / IP</th>
-                    <th className="px-6 py-4">Groupe</th>
-                    <th className="px-6 py-4 text-center">Sécurité & Protocoles</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
+                    <th className="px-6 py-4">{t('adminMachines.cols.name')}</th>
+                    <th className="px-6 py-4">{t('adminMachines.cols.group')}</th>
+                    <th className="px-6 py-4 text-center">{t('adminMachines.cols.security')}</th>
+                    <th className="px-6 py-4 text-right">{t('adminMachines.cols.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light">
@@ -414,25 +397,25 @@ const AdminMachines = () => {
                             {machine.machineGroup.name}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-text-secondary italic">Aucun groupe</span>
+                          <span className="text-[10px] text-text-secondary italic">{t('common.noGroup')}</span>
                         )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex justify-center gap-1.5">
-                          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border transition-colors ${machine.allowTunneling ? 'bg-success/10 text-success border-success/20' : 'bg-danger/5 text-danger border-danger/20 opacity-40'}`}>TUNNEL</span>
-                          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border transition-colors ${machine.allowRebound ? 'bg-success/10 text-success border-success/20' : 'bg-danger/5 text-danger border-danger/20 opacity-40'}`}>REBOND</span>
-                          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border transition-colors ${machine.allowCopyPaste ? 'bg-success/10 text-success border-success/20' : 'bg-danger/5 text-danger border-danger/20 opacity-40'}`}>CLIPBOARD</span>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border transition-colors ${machine.allowTunneling ? 'bg-success/10 text-success border-success/20' : 'bg-danger/5 text-danger border-danger/20 opacity-40'}`}>{t('adminMachines.flags.tunnel')}</span>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border transition-colors ${machine.allowRebound ? 'bg-success/10 text-success border-success/20' : 'bg-danger/5 text-danger border-danger/20 opacity-40'}`}>{t('adminMachines.flags.rebound')}</span>
+                          <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border transition-colors ${machine.allowCopyPaste ? 'bg-success/10 text-success border-success/20' : 'bg-danger/5 text-danger border-danger/20 opacity-40'}`}>{t('adminMachines.flags.clipboard')}</span>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          <button onClick={() => openPermissions(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title="Permissions">
+                          <button onClick={() => openPermissions(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title={t('common.permissions')}>
                             <ShieldCheck size={18} />
                           </button>
-                          <button onClick={() => openEditMachine(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title="Modifier">
+                          <button onClick={() => openEditMachine(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title={t('common.edit')}>
                             <Edit2 size={18} />
                           </button>
-                          <button onClick={() => deleteMachine(machine.id)} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all" title="Supprimer">
+                          <button onClick={() => deleteMachine(machine.id)} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all" title={t('common.delete')}>
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -445,26 +428,21 @@ const AdminMachines = () => {
             {machines.length === 0 && !loading && (
               <div className="text-center py-20 bg-background-surface">
                 <Server className="mx-auto text-neutral mb-4 opacity-20" size={48} />
-                <p className="text-text-secondary text-sm italic">Aucune machine configurée.</p>
+                <p className="text-text-secondary text-sm italic">{t('adminMachines.noMachines')}</p>
               </div>
             )}
           </div>
         </>
       )}
 
-      {/* GROUPS TAB */}
       {activeTab === 'groups' && (
         <>
           <div className="flex justify-end">
-            <button 
-              onClick={() => { 
-                setEditingId(null); 
-                setGroupFormData({ name: '', description: '' }); 
-                setIsGroupModalOpen(true); 
-              }} 
+            <button
+              onClick={() => { setEditingId(null); setGroupFormData({ name: '', description: '' }); setIsGroupModalOpen(true); }}
               className="btn-primary flex items-center gap-2 text-sm shadow-sm"
             >
-              <FolderPlus size={18} /> Nouveau groupe
+              <FolderPlus size={18} /> {t('adminMachines.addGroup')}
             </button>
           </div>
 
@@ -499,10 +477,10 @@ const AdminMachines = () => {
                         </div>
                       ))
                     ) : (
-                      <p className="text-[11px] text-text-secondary opacity-40 italic">Aucune machine dans ce groupe</p>
+                      <p className="text-[11px] text-text-secondary opacity-40 italic">{t('adminMachines.noMachinesInGroup')}</p>
                     )}
                     {group.machines.length > 3 && (
-                      <p className="text-[9px] text-primary font-bold uppercase tracking-tighter">+{group.machines.length - 3} autre{group.machines.length - 3 !== 1 ? 's' : ''}</p>
+                      <p className="text-[9px] text-primary font-bold uppercase tracking-tighter">+{group.machines.length - 3}</p>
                     )}
                   </div>
                 </div>
@@ -512,19 +490,19 @@ const AdminMachines = () => {
                     onClick={() => openGroupPermissions(group)}
                     className="flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase bg-background-surface text-text-secondary hover:text-primary hover:border-primary/50 border border-border-light rounded-md transition-all shadow-sm"
                   >
-                    <ShieldCheck size={14} /> Droits
+                    <ShieldCheck size={14} /> {t('common.permissions')}
                   </button>
                   <button
                     onClick={() => openEditGroup(group)}
                     className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
-                    title="Modifier"
+                    title={t('common.edit')}
                   >
                     <Edit2 size={16} />
                   </button>
                   <button
                     onClick={() => deleteGroup(group.id)}
                     className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all"
-                    title="Supprimer"
+                    title={t('common.delete')}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -536,13 +514,11 @@ const AdminMachines = () => {
           {machineGroups.length === 0 && !loading && (
             <div className="text-center py-20 card-subtle bg-background-surface">
               <FolderOpen className="mx-auto text-neutral mb-4 opacity-20" size={48} />
-              <p className="text-text-secondary text-sm italic">Aucun groupe de machines configuré.</p>
+              <p className="text-text-secondary text-sm italic">{t('adminMachines.noGroups')}</p>
             </div>
           )}
         </>
       )}
-
-
 
       {/* Permissions Modal */}
       {isPermModalOpen && (selectedMachine || selectedMachineGroup) && (
@@ -558,7 +534,7 @@ const AdminMachines = () => {
                     {selectedMachine ? selectedMachine.name : selectedMachineGroup.name}
                   </h2>
                   <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-1.5 font-bold">
-                    {selectedMachine ? `Serveur: ${selectedMachine.ip}` : 'Gestion des droits par groupe'}
+                    {selectedMachine ? `${t('common.permissions')}: ${selectedMachine.ip}` : t('common.permissions')}
                   </p>
                 </div>
               </div>
@@ -567,23 +543,23 @@ const AdminMachines = () => {
 
             <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh]">
               <div className="space-y-4">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-primary">Attribuer un nouvel accès</h3>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-primary">{t('adminMachines.perm.title')}</h3>
                 <form onSubmit={handlePermSubmit} className="bg-background-app p-6 rounded-xl border border-border-light flex flex-col gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Type d'entité</label>
-                      <select 
+                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.perm.entityType')}</label>
+                      <select
                         className="form-input w-full h-11 text-sm font-medium"
                         value={permFormData.targetType}
                         onChange={e => { setPermFormData({ ...permFormData, targetType: e.target.value as any }); setSelectedTarget(null); setSearchQuery(''); }}
                       >
-                        <option value="user">Utilisateur</option>
-                        <option value="group">Groupe d'utilisateurs</option>
+                        <option value="user">{t('adminMachines.perm.user')}</option>
+                        <option value="group">{t('adminMachines.perm.group')}</option>
                       </select>
                     </div>
-                    
+
                     <div className="space-y-1.5 relative">
-                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Rechercher</label>
+                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.perm.entityType')}</label>
                       {selectedTarget ? (
                         <div className="flex items-center justify-between w-full h-11 bg-primary/10 border border-primary/30 rounded-lg px-4 animate-in zoom-in-95">
                           <span className="text-sm font-bold text-primary flex items-center gap-2">
@@ -602,11 +578,11 @@ const AdminMachines = () => {
                           <input
                             type="text"
                             className="form-input input-with-icon text-xs h-10 w-full"
-                            placeholder={permFormData.targetType === 'user' ? "Email ou nom d'utilisateur..." : "Nom du groupe..."}
+                            placeholder={permFormData.targetType === 'user' ? t('adminMachines.perm.userSearch') : t('adminMachines.perm.groupSearch')}
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                           />
-                          
+
                           {suggestions.length > 0 && (
                             <div className="absolute z-20 w-full mt-2 bg-background-surface border border-border-light rounded-xl shadow-xl overflow-hidden py-1">
                               {suggestions.map(s => (
@@ -629,42 +605,42 @@ const AdminMachines = () => {
 
                   <div className="flex flex-col md:flex-row items-end gap-4 pt-2">
                     <div className="flex-1 w-full space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Niveau d'accès</label>
+                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.perm.level')}</label>
                       <div className="grid grid-cols-3 gap-2">
-                        {['VIEWER', 'OPERATOR', 'OWNER'].map((lvl) => (
+                        {(['VIEWER', 'OPERATOR', 'OWNER'] as const).map((lvl) => (
                           <button
                             key={lvl}
                             type="button"
-                            onClick={() => setPermFormData({ ...permFormData, level: lvl as any })}
+                            onClick={() => setPermFormData({ ...permFormData, level: lvl })}
                             className={`py-2 rounded-lg text-[10px] font-bold transition-all border ${
-                              permFormData.level === lvl 
-                                ? 'bg-primary text-white border-primary shadow-sm shadow-primary/20' 
+                              permFormData.level === lvl
+                                ? 'bg-primary text-white border-primary shadow-sm shadow-primary/20'
                                 : 'bg-background-surface text-text-secondary border-border-light hover:border-primary/30'
                             }`}
                           >
-                            {lvl === 'VIEWER' ? 'LECTURE' : lvl === 'OPERATOR' ? 'ACCÈS' : 'GESTION'}
+                            {lvl === 'VIEWER' ? t('adminMachines.perm.viewer') : lvl === 'OPERATOR' ? t('adminMachines.perm.operator') : t('adminMachines.perm.owner')}
                           </button>
                         ))}
                       </div>
                     </div>
-                    <button 
-                      type="submit" 
+                    <button
+                      type="submit"
                       disabled={!selectedTarget}
                       className="btn-primary h-10 px-8 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 disabled:grayscale transition-all w-full md:w-auto"
                     >
-                      <Plus size={14} /> Accorder
+                      <Plus size={14} /> {t('adminMachines.perm.grant')}
                     </button>
                   </div>
                 </form>
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-secondary px-1">Liste des ayants droit</h3>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-secondary px-1">{t('adminMachines.perm.list')}</h3>
                 <div className="bg-background-app rounded-xl border border-border-light divide-y divide-border-light">
                   {permissions.length === 0 ? (
                     <div className="text-center py-12 px-6">
                       <ShieldAlert size={32} className="mx-auto text-text-secondary opacity-10 mb-3" />
-                      <p className="text-xs text-text-secondary italic">Aucun accès spécifique configuré.</p>
+                      <p className="text-xs text-text-secondary italic">{t('adminMachines.perm.empty')}</p>
                     </div>
                   ) : (
                     permissions.map((perm) => (
@@ -675,24 +651,24 @@ const AdminMachines = () => {
                           </div>
                           <div>
                             <p className="text-sm font-bold text-text-main">
-                              {perm.user ? (perm.user.username || perm.user.email) : (perm.group?.name || 'Groupe inconnu')}
+                              {perm.user ? (perm.user.username || perm.user.email) : (perm.group?.name || t('common.none'))}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
                               <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-tighter ${
-                                perm.level === 'OWNER' ? 'bg-danger/10 text-danger border border-danger/20' : 
-                                perm.level === 'OPERATOR' ? 'bg-success/10 text-success border border-success/20' : 
+                                perm.level === 'OWNER' ? 'bg-danger/10 text-danger border border-danger/20' :
+                                perm.level === 'OPERATOR' ? 'bg-success/10 text-success border border-success/20' :
                                 'bg-primary/10 text-primary border border-primary/20'
                               }`}>
                                 {perm.level}
                               </span>
-                              <span className="text-[9px] text-text-secondary opacity-60">• {perm.user ? 'Individuel' : 'Groupe'}</span>
+                              <span className="text-[9px] text-text-secondary opacity-60">• {perm.user ? t('adminMachines.perm.individual') : t('adminMachines.perm.group')}</span>
                             </div>
                           </div>
                         </div>
-                        <button 
+                        <button
                           onClick={() => deletePermission(perm.id)}
                           className="p-2.5 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-xl opacity-0 group-hover:opacity-100 transition-all"
-                          title="Supprimer l'accès"
+                          title={t('common.delete')}
                         >
                           <Trash2 size={18} />
                         </button>
@@ -702,13 +678,13 @@ const AdminMachines = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 bg-background-app border-t border-border-light flex justify-end">
-              <button 
+              <button
                 onClick={() => setIsPermModalOpen(false)}
                 className="btn-secondary text-xs font-bold uppercase tracking-widest px-10 py-3 shadow-sm"
               >
-                Fermer
+                {t('common.close')}
               </button>
             </div>
           </div>
@@ -725,8 +701,8 @@ const AdminMachines = () => {
                   {editingId ? <Edit2 size={28} /> : <Plus size={28} />}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-text-main leading-none">{editingId ? 'Configuration Machine' : 'Nouvelle Machine'}</h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-2 font-bold">Paramètres de connexion & Sécurité</p>
+                  <h2 className="text-2xl font-bold text-text-main leading-none">{editingId ? t('adminMachines.modal.editTitle') : t('adminMachines.modal.newTitle')}</h2>
+                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-2 font-bold">{t('adminMachines.modal.subtitle')}</p>
                 </div>
               </div>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={28} /></button>
@@ -734,72 +710,69 @@ const AdminMachines = () => {
 
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="space-y-6">
-                <h3 className="text-[9px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 w-fit px-2 py-1 rounded border border-primary/10">1. Réseau & Identification</h3>
+                <h3 className="text-[9px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 w-fit px-2 py-1 rounded border border-primary/10">{t('adminMachines.modal.section1')}</h3>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Désignation</label>
-                  <input type="text" className="form-input w-full h-11" placeholder="ex: Serveur Web Production" required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.nameLabel')}</label>
+                  <input type="text" className="form-input w-full h-11" placeholder={t('adminMachines.modal.namePlaceholder')} required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                 </div>
-                <div className="grid grid-cols-6 gap-3">
+                <div className="grid grid-cols-4 gap-3">
                   <div className="col-span-3 space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Adresse Host/IP</label>
+                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.host')}</label>
                     <input type="text" className="form-input w-full h-11 font-mono text-sm" placeholder="10.0.0.1" required value={formData.ip} onChange={e => setFormData({ ...formData, ip: e.target.value })} />
                   </div>
-                  <div className="col-span-2 space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Protocole</label>
-                    <select
-                      className="form-input w-full h-11 font-medium"
-                      value={formData.protocol}
-                      onChange={e => {
-                        const proto = e.target.value;
-                        setFormData({
-                          ...formData,
-                          protocol: proto,
-                          // Ajuste le port par defaut si l'admin n'a pas personnalise
-                          port:
-                            formData.port === 22 || formData.port === 3389
-                              ? proto === 'RDP' ? 3389 : 22
-                              : formData.port,
-                        });
-                      }}
-                    >
-                      <option value="SSH">SSH</option>
-                      {rdpEnabled && <option value="RDP">RDP</option>}
-                    </select>
-                    {!rdpEnabled && (
-                      <p className="text-[9px] text-text-secondary ml-1 mt-1">
-                        RDP désactivé — activez <span className="font-mono">ENABLE_RDP=true</span> et relancez avec <span className="font-mono">--profile rdp</span>.
-                      </p>
-                    )}
-                  </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Port</label>
+                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.port')}</label>
                     <input type="number" className="form-input w-full h-11 font-mono text-sm text-center" required value={formData.port} onChange={e => setFormData({ ...formData, port: parseInt(e.target.value) })} />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Groupe d'inventaire</label>
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.protocol')}</label>
+                  <select
+                    className="form-input w-full h-11 font-medium"
+                    value={formData.protocol}
+                    onChange={e => {
+                      const proto = e.target.value;
+                      setFormData({
+                        ...formData,
+                        protocol: proto,
+                        port: formData.port === 22 || formData.port === 3389
+                          ? proto === 'RDP' ? 3389 : 22
+                          : formData.port,
+                      });
+                    }}
+                  >
+                    <option value="SSH">SSH</option>
+                    {rdpEnabled && <option value="RDP">RDP</option>}
+                  </select>
+                  {!rdpEnabled && (
+                    <p className="text-[9px] text-text-secondary ml-1 mt-1">
+                      {t('adminMachines.modal.rdpDisabled')}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.inventoryGroup')}</label>
                   <select className="form-input w-full h-11 font-medium" value={formData.machineGroupId} onChange={e => setFormData({ ...formData, machineGroupId: e.target.value })}>
-                    <option value="">Aucun groupe</option>
+                    <option value="">{t('common.noGroup')}</option>
                     {machineGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Note / Description</label>
-                  <textarea className="form-input w-full h-24 py-3 resize-none" placeholder="Description de la machine..." value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}></textarea>
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.description')}</label>
+                  <textarea className="form-input w-full h-24 py-3 resize-none" placeholder={t('adminMachines.modal.description')} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}></textarea>
                 </div>
               </div>
 
               <div className="space-y-6">
                 <h3 className="text-[9px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 w-fit px-2 py-1 rounded border border-primary/10">
-                  2. {formData.protocol === 'RDP' ? 'Sécurité RDP & Identifiants' : 'Sécurité SSH & Identifiants'}
+                  {formData.protocol === 'RDP' ? t('adminMachines.modal.section2Rdp') : t('adminMachines.modal.section2Ssh')}
                 </h3>
 
-                {/* ---- SSH-only: empreinte serveur ---- */}
                 {formData.protocol === 'SSH' && (
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase text-text-secondary ml-1 flex justify-between">
-                      Empreinte SHA-256
-                      <span className="text-[8px] text-danger">* Requis</span>
+                      {t('adminMachines.modal.fingerprint')}
+                      <span className="text-[8px] text-danger">* {t('common.required')}</span>
                     </label>
                     <div className="flex gap-2">
                       <div className="relative flex-1 group">
@@ -809,7 +782,7 @@ const AdminMachines = () => {
                         <input
                           type="text"
                           className="form-input input-with-icon h-11 w-full text-[10px] font-mono"
-                          placeholder="SHA256:..."
+                          placeholder={t('adminMachines.modal.fingerprintPlaceholder')}
                           required={formData.protocol === 'SSH'}
                           value={formData.sshFingerprint}
                           onChange={e => setFormData({ ...formData, sshFingerprint: e.target.value })}
@@ -820,7 +793,7 @@ const AdminMachines = () => {
                         onClick={probeSshFingerprint}
                         disabled={probing}
                         className="p-2.5 bg-background-app border border-border-light rounded-lg text-primary hover:bg-primary/5 transition-all disabled:opacity-50 shadow-sm"
-                        title="Récupérer l'empreinte du serveur"
+                        title={t('adminMachines.modal.fingerprintTooltip')}
                       >
                         <RefreshCw size={20} className={probing ? 'animate-spin' : ''} />
                       </button>
@@ -830,7 +803,7 @@ const AdminMachines = () => {
                         <AlertTriangle size={18} className="text-warning flex-shrink-0" />
                         <div className="space-y-1.5">
                           <p className="text-[10px] text-warning leading-tight font-medium">
-                            Vérifiez cette empreinte manuellement. Ne validez que si elle correspond au serveur cible pour éviter toute interception (MITM).
+                            {t('adminMachines.modal.fingerprintWarning')}
                           </p>
                           <p className="text-[9px] text-warning/80 font-mono bg-warning/5 p-1.5 rounded border border-warning/20">
                             # Vérifier sur le serveur (toutes les clés) :<br/>
@@ -842,29 +815,28 @@ const AdminMachines = () => {
                   </div>
                 )}
 
-                {/* ---- RDP-only: mode de securite + domaine AD ---- */}
                 {formData.protocol === 'RDP' && (
                   <>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Mode de sécurité</label>
+                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.rdpSecurity')}</label>
                         <select
                           className="form-input w-full h-11 font-medium"
                           value={formData.rdpSecurity}
                           onChange={e => setFormData({ ...formData, rdpSecurity: e.target.value as any })}
                         >
-                          <option value="NLA">NLA (recommandé)</option>
-                          <option value="TLS">TLS</option>
-                          <option value="RDP">RDP (legacy)</option>
-                          <option value="ANY">Auto-négocié</option>
+                          <option value="NLA">{t('adminMachines.modal.rdpNla')}</option>
+                          <option value="TLS">{t('adminMachines.modal.rdpTls')}</option>
+                          <option value="RDP">{t('adminMachines.modal.rdpRdp')}</option>
+                          <option value="ANY">{t('adminMachines.modal.rdpAny')}</option>
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Domaine AD (optionnel)</label>
+                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.rdpDomain')}</label>
                         <input
                           type="text"
                           className="form-input w-full h-11 font-medium"
-                          placeholder="CORP"
+                          placeholder={t('adminMachines.modal.rdpDomainPlaceholder')}
                           value={formData.rdpDomain}
                           onChange={e => setFormData({ ...formData, rdpDomain: e.target.value })}
                         />
@@ -872,8 +844,8 @@ const AdminMachines = () => {
                     </div>
                     <div className="flex items-center justify-between p-4 bg-background-app rounded-xl border border-border-light">
                       <div className="flex flex-col">
-                        <span className="text-[10px] font-bold text-text-main uppercase tracking-tight">Ignorer certificat TLS</span>
-                        <span className="text-[9px] text-text-secondary opacity-60 font-medium">À n'activer qu'en lab. Désactive la vérification du certificat du serveur RDP.</span>
+                        <span className="text-[10px] font-bold text-text-main uppercase tracking-tight">{t('adminMachines.modal.rdpIgnoreCert')}</span>
+                        <span className="text-[9px] text-text-secondary opacity-60 font-medium">{t('adminMachines.modal.rdpIgnoreCertHint')}</span>
                       </div>
                       <button
                         type="button"
@@ -887,35 +859,35 @@ const AdminMachines = () => {
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Utilisateur</label>
-                  <input type="text" className="form-input w-full h-11 font-medium" placeholder="ex: admin" required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.username')}</label>
+                  <input type="text" className="form-input w-full h-11 font-medium" placeholder={t('adminMachines.modal.usernamePlaceholder')} required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Mot de Passe</label>
-                  <input type="password" name="new-password" title="password" className="form-input w-full h-11" placeholder={editingId ? "Inchangé si vide" : "••••••••"} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.passwordLabel')}</label>
+                  <input type="password" name="new-password" title="password" className="form-input w-full h-11" placeholder={editingId ? t('adminMachines.modal.passwordPlaceholderEdit') : '••••••••'} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
                 </div>
                 {formData.protocol === 'SSH' && (
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Clé Privée (PEM)</label>
-                    <textarea className="form-input w-full h-24 text-[9px] font-mono py-3 resize-none" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" value={formData.privateKey} onChange={e => setFormData({ ...formData, privateKey: e.target.value })}></textarea>
+                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.privateKey')}</label>
+                    <textarea className="form-input w-full h-24 text-[9px] font-mono py-3 resize-none" placeholder={t('adminMachines.modal.privateKeyPlaceholder')} value={formData.privateKey} onChange={e => setFormData({ ...formData, privateKey: e.target.value })}></textarea>
                   </div>
                 )}
               </div>
 
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 pt-6 border-t border-border-light">
                 {[
-                  { id: 'allowTunneling', label: 'Port Forwarding', desc: 'Tunnel SSH' },
-                  { id: 'allowRebound', label: 'Rebond / Proxy', desc: 'Saut d\'hôte' },
-                  { id: 'allowCopyPaste', label: 'Presse-papier', desc: 'Copier/Coller' }
+                  { id: 'allowTunneling', label: t('adminMachines.modal.tunneling'), desc: t('adminMachines.modal.tunnelingDesc') },
+                  { id: 'allowRebound', label: t('adminMachines.modal.rebound'), desc: t('adminMachines.modal.reboundDesc') },
+                  { id: 'allowCopyPaste', label: t('adminMachines.modal.clipboard'), desc: t('adminMachines.modal.clipboardDesc') }
                 ].map(opt => (
                   <div key={opt.id} className="flex items-center justify-between p-4 bg-background-app rounded-xl border border-border-light group hover:border-primary/30 transition-colors">
                     <div className="flex flex-col">
                       <span className="text-[10px] font-bold text-text-main uppercase tracking-tight">{opt.label}</span>
                       <span className="text-[9px] text-text-secondary opacity-60 font-medium">{opt.desc}</span>
                     </div>
-                    <button 
-                      type="button" 
-                      onClick={() => setFormData({ ...formData, [opt.id]: !(formData as any)[opt.id] })} 
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, [opt.id]: !(formData as any)[opt.id] })}
                       className={`transition-all transform active:scale-90 ${(formData as any)[opt.id] ? 'text-primary' : 'text-text-secondary opacity-20'}`}
                     >
                       {(formData as any)[opt.id] ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
@@ -925,8 +897,8 @@ const AdminMachines = () => {
               </div>
 
               <div className="md:col-span-2 flex justify-end gap-3 mt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary px-8 py-3 text-xs font-bold uppercase tracking-widest shadow-sm">Annuler</button>
-                <button type="submit" className="btn-primary px-10 py-3 text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary/20">{editingId ? 'Sauvegarder' : 'Créer l\'hôte'}</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary px-8 py-3 text-xs font-bold uppercase tracking-widest shadow-sm">{t('common.cancel')}</button>
+                <button type="submit" className="btn-primary px-10 py-3 text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary/20">{editingId ? t('adminMachines.modal.save') : t('adminMachines.modal.create')}</button>
               </div>
             </form>
           </div>
@@ -943,8 +915,8 @@ const AdminMachines = () => {
                   <FolderPlus size={28} />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-text-main leading-none">{editingId ? 'Paramètres du Groupe' : 'Nouveau Groupe'}</h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-2 font-bold">Organisation des ressources</p>
+                  <h2 className="text-2xl font-bold text-text-main leading-none">{editingId ? t('adminMachines.modal.groupEditTitle') : t('adminMachines.modal.groupNewTitle')}</h2>
+                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-2 font-bold">{t('adminMachines.modal.groupOrg')}</p>
                 </div>
               </div>
               <button onClick={() => setIsGroupModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={28} /></button>
@@ -952,32 +924,32 @@ const AdminMachines = () => {
 
             <form onSubmit={handleGroupSubmit} className="space-y-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Nom du groupe</label>
-                <input type="text" className="form-input w-full h-11" placeholder="ex: Infrastructure Front-End" required value={groupFormData.name} onChange={e => setGroupFormData({ ...groupFormData, name: e.target.value })} />
+                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.groupName')}</label>
+                <input type="text" className="form-input w-full h-11" placeholder={t('adminMachines.modal.groupNamePlaceholder')} required value={groupFormData.name} onChange={e => setGroupFormData({ ...groupFormData, name: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">Note / Description</label>
-                <textarea className="form-input w-full h-24 py-3 resize-none" placeholder="Décrivez l'usage de ce groupe..." value={groupFormData.description} onChange={e => setGroupFormData({ ...groupFormData, description: e.target.value })}></textarea>
+                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.groupDescription')}</label>
+                <textarea className="form-input w-full h-24 py-3 resize-none" placeholder={t('adminMachines.modal.groupDescPlaceholder')} value={groupFormData.description} onChange={e => setGroupFormData({ ...groupFormData, description: e.target.value })}></textarea>
               </div>
 
               {editingId && (
                 <div className="pt-6 border-t border-border-light space-y-4">
                   <h3 className="text-[10px] font-bold uppercase tracking-widest text-primary flex items-center gap-2 px-1">
-                    <Server size={14} /> Machines membres
+                    <Server size={14} /> {t('adminMachines.modal.groupMembers')}
                   </h3>
-                  
+
                   <div className="flex gap-2">
-                    <select 
+                    <select
                       className="form-input flex-1 h-11 text-sm font-medium"
                       value={selectedMachineToAdd}
                       onChange={e => setSelectedMachineToAdd(e.target.value)}
                     >
-                      <option value="">Ajouter une machine existante...</option>
+                      <option value="">{t('adminMachines.modal.groupAddMachine')}</option>
                       {machines.filter(m => !m.machineGroupId).map(m => (
                         <option key={m.id} value={m.id}>{m.name} ({m.ip})</option>
                       ))}
                     </select>
-                    <button 
+                    <button
                       type="button"
                       onClick={handleAddMachineToGroup}
                       disabled={!selectedMachineToAdd}
@@ -996,26 +968,26 @@ const AdminMachines = () => {
                             <span className="text-xs font-bold text-text-main">{m.name}</span>
                             <span className="text-[9px] text-text-secondary font-mono opacity-50">{m.ip}</span>
                           </div>
-                          <button 
+                          <button
                             type="button"
                             onClick={() => handleRemoveMachineFromGroup(m.id)}
                             className="text-text-secondary hover:text-danger p-1.5 hover:bg-danger/5 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                            title="Retirer du groupe"
+                            title={t('adminMachines.modal.groupRemove')}
                           >
                             <Trash2 size={14} />
                           </button>
                         </div>
                       ))
                     ) : (
-                      <p className="p-8 text-center text-text-secondary text-xs italic opacity-50">Ce groupe ne contient aucune machine.</p>
+                      <p className="p-8 text-center text-text-secondary text-xs italic opacity-50">{t('adminMachines.modal.groupEmpty')}</p>
                     )}
                   </div>
                 </div>
               )}
 
               <div className="flex justify-end gap-3 pt-6 border-t border-border-light">
-                <button type="button" onClick={() => setIsGroupModalOpen(false)} className="btn-secondary px-8 py-3 text-xs font-bold uppercase tracking-widest">Annuler</button>
-                <button type="submit" className="btn-primary px-10 py-3 text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary/20">{editingId ? 'Sauvegarder' : 'Initialiser le groupe'}</button>
+                <button type="button" onClick={() => setIsGroupModalOpen(false)} className="btn-secondary px-8 py-3 text-xs font-bold uppercase tracking-widest">{t('common.cancel')}</button>
+                <button type="submit" className="btn-primary px-10 py-3 text-xs font-bold uppercase tracking-widest shadow-lg shadow-primary/20">{editingId ? t('adminMachines.modal.save') : t('adminMachines.modal.groupInit')}</button>
               </div>
             </form>
           </div>
