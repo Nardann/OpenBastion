@@ -175,11 +175,13 @@ const Login: React.FC = () => {
                   <input
                     required
                     autoFocus
+                    inputMode="numeric"
+                    pattern="\d{6}"
                     className="form-input input-with-icon h-11 text-center text-lg tracking-[0.5em] font-mono"
                     placeholder="000000"
                     maxLength={6}
                     value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                   />
                 </div>
                 <p className="text-[10px] text-text-secondary mt-2 text-center">

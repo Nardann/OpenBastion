@@ -205,11 +205,13 @@ const Profile: React.FC = () => {
                     <input
                       autoFocus
                       type="text"
+                      inputMode="numeric"
+                      pattern="\d{6}"
                       maxLength={6}
                       className="w-full text-center text-lg font-mono tracking-[0.3em] py-2 bg-background-app border border-border-light rounded-md"
                       placeholder="000000"
                       value={otpCode}
-                      onChange={e => setOtpCode(e.target.value)}
+                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
                     />
                     <button
                       onClick={handleDisableOtp}
@@ -249,11 +251,13 @@ const Profile: React.FC = () => {
                     <input
                       autoFocus
                       type="text"
+                      inputMode="numeric"
+                      pattern="\d{6}"
                       maxLength={6}
                       className="w-full text-center text-lg font-mono tracking-[0.3em] py-2 bg-background-app border border-border-light rounded-md"
                       placeholder="000000"
                       value={otpCode}
-                      onChange={e => setOtpCode(e.target.value)}
+                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
                     />
                     <button
                       onClick={handleEnableOtp}

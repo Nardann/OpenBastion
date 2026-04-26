@@ -69,7 +69,7 @@ export class AuthController {
     return Promise.all(
       providers.map(async (p) => ({
         ...p,
-        config: (this.authProvidersService as any).decryptConfig(p.config, p.id),
+        config: this.authProvidersService.decryptConfig(p.config, p.id),
       })),
     );
   }
@@ -91,7 +91,7 @@ export class AuthController {
     
     return {
       ...result,
-      config: (this.authProvidersService as any).decryptConfig(result.config, result.id),
+      config: this.authProvidersService.decryptConfig(result.config, result.id),
     };
   }
 
@@ -120,7 +120,7 @@ export class AuthController {
 
     return {
       ...result,
-      config: (this.authProvidersService as any).decryptConfig(result.config, result.id),
+      config: this.authProvidersService.decryptConfig(result.config, result.id),
     };
   }
 
@@ -354,8 +354,10 @@ export class AuthController {
   async oidcLogin(@Res() res: Response) {
     const state = crypto.randomBytes(16).toString('hex');
     const nonce = crypto.randomBytes(16).toString('hex');
+    // PKCE: generate code verifier (43–128 chars, URL-safe random)
+    const codeVerifier = crypto.randomBytes(48).toString('base64url');
 
-    const url = await this.oidcService.getAuthorizationUrl(state, nonce);
+    const url = await this.oidcService.getAuthorizationUrl(state, nonce, codeVerifier);
     if (!url) throw new UnauthorizedException('OIDC not configured');
 
     const oidcCookieOptions = {
@@ -367,6 +369,7 @@ export class AuthController {
 
     res.cookie('oidc_state', state, oidcCookieOptions);
     res.cookie('oidc_nonce', nonce, oidcCookieOptions);
+    res.cookie('oidc_code_verifier', codeVerifier, oidcCookieOptions);
 
     res.redirect(url);
   }
@@ -380,9 +383,13 @@ export class AuthController {
     const state = request.query.state as string;
     const savedState = request.cookies?.oidc_state;
     const savedNonce = request.cookies?.oidc_nonce;
+    const savedCodeVerifier = request.cookies?.oidc_code_verifier;
 
     if (!savedState || savedState !== state) {
       throw new UnauthorizedException('Invalid OIDC state');
+    }
+    if (!savedCodeVerifier) {
+      throw new UnauthorizedException('Missing PKCE code verifier');
     }
 
     // Reconstruct the full public URL of the callback request.
@@ -397,6 +404,7 @@ export class AuthController {
       fullUrl,
       savedState,
       savedNonce,
+      savedCodeVerifier,
     );
     if (!user) throw new UnauthorizedException('OIDC authentication failed');
 

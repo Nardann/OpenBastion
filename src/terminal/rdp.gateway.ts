@@ -308,7 +308,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     let isAllowed = session.accessCache?.allowed;
     if (
       !session.accessCache ||
-      now - session.accessCache.lastChecked > 30_000
+      now - session.accessCache.lastChecked > 5_000
     ) {
       isAllowed = await this.rbacService.hasAccess(
         user.sub,

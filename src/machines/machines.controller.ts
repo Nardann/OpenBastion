@@ -114,7 +114,6 @@ export class MachinesController {
 
   @Delete(':id')
   @Roles(Role.ADMIN)
-  @RequireAccessLevel(AccessLevel.OWNER)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.machinesService.deleteMachine(id);
   }

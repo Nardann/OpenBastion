@@ -68,7 +68,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message: message,
       error:
         status >= 400 && status < 500
-          ? exception.name || 'Request Error'
+          ? 'Request Error'
           : 'Internal Server Error',
       timestamp: new Date().toISOString(),
     });

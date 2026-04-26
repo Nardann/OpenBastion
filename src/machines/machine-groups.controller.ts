@@ -8,6 +8,7 @@ import {
   Delete,
   UseGuards,
   Req,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { MachineGroupsService } from './machine-groups.service';
@@ -42,7 +43,8 @@ export class MachineGroupsController {
 
   @Get(':id')
   @SkipThrottle()
-  findOne(@Param('id') id: string) {
+  @Roles(Role.ADMIN)
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.machineGroupsService.findOne(id);
   }
 

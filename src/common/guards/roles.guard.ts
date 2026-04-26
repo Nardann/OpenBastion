@@ -23,16 +23,13 @@ export class RolesGuard implements CanActivate {
     const hasRole = requiredRoles.includes(user.role);
     if (!hasRole) return false;
 
-    // Strict Sudo check: If the route requires ADMIN and the user IS an admin,
-    // they MUST have activated Sudo mode (isAdminMode).
-    // If the route is open to USER and the user is a USER, this check is skipped.
+    // Sudo check: ADMIN-only routes require isAdminMode to be active.
+    // Routes open to USERs skip this check entirely.
     const requiresOnlyAdmin =
       requiredRoles.includes(Role.ADMIN) && requiredRoles.length === 1;
 
-    if (user.role === Role.ADMIN && (requiresOnlyAdmin || user.isAdminMode)) {
-      if (requiresOnlyAdmin && !user.isAdminMode) {
-        return false;
-      }
+    if (requiresOnlyAdmin && !user.isAdminMode) {
+      return false;
     }
 
     return true;
