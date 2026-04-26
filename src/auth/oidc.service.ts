@@ -24,12 +24,12 @@ export class OidcService {
   }
 
   private isInternalIssuer(issuerUrl: string): boolean {
-    return (
-      issuerUrl.includes('localhost') ||
-      issuerUrl.includes('127.0.0.1') ||
-      issuerUrl.includes('192.168.') ||
-      issuerUrl.includes('host.docker.internal')
-    );
+    try {
+      const host = new URL(issuerUrl).hostname;
+      return /^(localhost|127\.0\.0\.1|host\.docker\.internal|(192\.168\.\d{1,3}\.\d{1,3}))$/.test(host);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -172,6 +172,7 @@ export class OidcService {
   async getAuthorizationUrl(
     state: string,
     nonce: string,
+    codeVerifier: string,
   ): Promise<string | null> {
     const serverMetadata = await this.getServerMetadata();
     if (!serverMetadata) return null;
@@ -181,17 +182,18 @@ export class OidcService {
 
     try {
       const oidc = await this.getOpenidClient();
+      const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
 
-      // openid-client v6: buildAuthorizationUrl
-      // clientId is embedded in serverMetadata via discovery()
       const authorizationUrl = oidc.buildAuthorizationUrl(serverMetadata, {
         scope: 'openid email profile',
         state,
         nonce,
         redirect_uri: config.callbackUrl,
+        code_challenge_method: 'S256',
+        code_challenge: codeChallenge,
       });
 
-      this.logger.log(`OIDC Authorization URL: ${authorizationUrl.href}`);
+      this.logger.log(`OIDC Authorization URL generated with PKCE`);
       return authorizationUrl.href;
     } catch (error: any) {
       this.logger.error(
@@ -205,6 +207,7 @@ export class OidcService {
     fullUrl: string,
     savedState: string,
     savedNonce: string,
+    codeVerifier: string,
   ): Promise<any> {
     try {
       this.logger.log('Validating OIDC callback...');
@@ -224,7 +227,7 @@ export class OidcService {
       const isDevEnv = process.env.NODE_ENV !== 'production';
       const useInsecure = isInternal && isDevEnv;
 
-      // openid-client v6: authorizationCodeGrant validates state, nonce and id_token
+      // openid-client v6: authorizationCodeGrant validates state, nonce, id_token and PKCE
       let tokens: any;
       if (useInsecure) {
         const insecureFetch = this.buildInsecureFetch();
@@ -233,7 +236,7 @@ export class OidcService {
           serverMetadata,
           currentUrl,
           {
-            pkceCodeVerifier: undefined,
+            pkceCodeVerifier: codeVerifier,
             expectedState: savedState,
             expectedNonce: savedNonce,
           },
@@ -245,7 +248,7 @@ export class OidcService {
           serverMetadata,
           currentUrl,
           {
-            pkceCodeVerifier: undefined,
+            pkceCodeVerifier: codeVerifier,
             expectedState: savedState,
             expectedNonce: savedNonce,
           },

@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Plus, 
-  Trash2, 
-  Edit2, 
+import {
+  Plus,
+  Trash2,
+  Edit2,
   X,
   FolderOpen,
-  Server
+  Server,
+  AlertTriangle,
 } from 'lucide-react';
 import api from '../services/api';
+import { useLang } from '../context/LangContext';
+import { useNotification } from '../context/NotificationContext';
 
 interface Machine {
   id: string;
@@ -26,18 +29,21 @@ interface MachineGroup {
 }
 
 const AdminMachineGroups: React.FC = () => {
+  const { t } = useLang();
+  const { notify } = useNotification();
   const [groups, setGroups] = useState<MachineGroup[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedGroup, setSelectedGroup] = useState<MachineGroup | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({ name: '', description: '' });
 
   const fetchGroups = async () => {
     try {
       const response = await api.get('/machine-groups');
-      setGroups(response.data as any);
+      setGroups(response.data as MachineGroup[]);
     } catch (error) {
       console.error('Fetch failed:', error);
     } finally {
@@ -62,17 +68,17 @@ const AdminMachineGroups: React.FC = () => {
       setFormData({ name: '', description: '' });
       fetchGroups();
     } catch (error) {
-      alert('Erreur lors de l\'enregistrement');
+      notify({ type: 'error', title: t('common.error'), message: t('adminMachines.errors.saveError') });
     }
   };
 
   const deleteGroup = async (id: string) => {
-    if (!confirm('Supprimer ce groupe et dégrouper les machines ?')) return;
     try {
       await api.delete(`/machine-groups/${id}`);
+      setPendingDeleteId(null);
       fetchGroups();
     } catch (err) {
-      alert('Erreur suppression');
+      notify({ type: 'error', title: t('common.error'), message: t('adminMachines.errors.deleteError') });
     }
   };
 
@@ -89,8 +95,8 @@ const AdminMachineGroups: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-text-main">Groupes de Machines</h1>
-          <p className="text-text-secondary mt-1 text-sm">Organisez vos machines par groupes pour gérer les accès facilement.</p>
+          <h1 className="text-text-main">{t('adminMachines.tabGroups')}</h1>
+          <p className="text-text-secondary mt-1 text-sm">{t('adminMachines.subtitle')}</p>
         </div>
         <button
           onClick={() => {
@@ -100,7 +106,7 @@ const AdminMachineGroups: React.FC = () => {
           }}
           className="btn-primary flex items-center gap-2 text-sm"
         >
-          <Plus size={18} /> Ajouter un groupe
+          <Plus size={18} /> {t('adminMachines.addGroup')}
         </button>
       </div>
 
@@ -139,35 +145,61 @@ const AdminMachineGroups: React.FC = () => {
                     </div>
                   ))
                 ) : (
-                  <p className="text-[11px] text-text-secondary italic">Aucune machine</p>
+                  <p className="text-[11px] text-text-secondary italic">{t('adminMachines.noMachinesInGroup')}</p>
                 )}
                 {group.machines.length > 3 && (
                   <p className="text-[10px] text-primary font-bold">+{group.machines.length - 3} autre{group.machines.length - 3 !== 1 ? 's' : ''}</p>
                 )}
               </div>
 
-              <div className="flex gap-1 pt-2 border-t border-border-light">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEditGroup(group);
-                  }}
-                  className="flex-1 p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all text-[11px] font-bold uppercase"
-                  title="Modifier"
+              {pendingDeleteId === group.id ? (
+                <div
+                  className="flex flex-col gap-2 pt-2 border-t border-danger/30"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <Edit2 size={14} className="mx-auto" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteGroup(group.id);
-                  }}
-                  className="flex-1 p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all text-[11px] font-bold uppercase"
-                  title="Supprimer"
-                >
-                  <Trash2 size={14} className="mx-auto" />
-                </button>
-              </div>
+                  <div className="flex items-center gap-2 text-danger text-[11px]">
+                    <AlertTriangle size={12} className="flex-shrink-0" />
+                    <span>{t('adminMachines.errors.deleteGroupConfirm')}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setPendingDeleteId(null)}
+                      className="flex-1 p-2 text-text-secondary hover:text-text-main hover:bg-background-app rounded-md transition-all text-[11px] font-bold uppercase"
+                    >
+                      {t('common.cancel')}
+                    </button>
+                    <button
+                      onClick={() => deleteGroup(group.id)}
+                      className="flex-1 p-2 text-danger hover:bg-danger/10 rounded-md transition-all text-[11px] font-bold uppercase"
+                    >
+                      {t('common.delete')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-1 pt-2 border-t border-border-light">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditGroup(group);
+                    }}
+                    className="flex-1 p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all text-[11px] font-bold uppercase"
+                    title={t('common.edit')}
+                  >
+                    <Edit2 size={14} className="mx-auto" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPendingDeleteId(group.id);
+                    }}
+                    className="flex-1 p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all text-[11px] font-bold uppercase"
+                    title={t('common.delete')}
+                  >
+                    <Trash2 size={14} className="mx-auto" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -176,7 +208,7 @@ const AdminMachineGroups: React.FC = () => {
       {groups.length === 0 && !loading && (
         <div className="text-center py-12 card-subtle">
           <FolderOpen className="mx-auto text-neutral mb-4 opacity-20" size={48} />
-          <p className="text-text-secondary text-sm italic">Aucun groupe de machines.</p>
+          <p className="text-text-secondary text-sm italic">{t('adminMachines.noGroups')}</p>
         </div>
       )}
 
@@ -232,7 +264,7 @@ const AdminMachineGroups: React.FC = () => {
             ) : (
               <div className="text-center py-8 border border-dashed border-border-light rounded-lg">
                 <Server className="mx-auto text-neutral/30 mb-2" size={32} />
-                <p className="text-text-secondary text-sm italic">Aucune machine dans ce groupe.</p>
+                <p className="text-text-secondary text-sm italic">{t('adminMachines.modal.groupEmpty')}</p>
               </div>
             )}
           </div>
@@ -244,29 +276,29 @@ const AdminMachineGroups: React.FC = () => {
         <div className="fixed inset-0 bg-text-main/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-background-surface w-full max-w-md p-8 rounded-lg border border-border-light shadow-xl animate-in fade-in zoom-in-95 duration-200">
             <h2 className="text-xl font-bold text-text-main mb-6">
-              {editingId ? 'Modifier le groupe' : 'Ajouter un groupe'}
+              {editingId ? t('adminMachines.modal.groupEditTitle') : t('adminMachines.modal.groupNewTitle')}
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-xs font-bold uppercase text-text-secondary">Nom du groupe</label>
+                <label className="text-xs font-bold uppercase text-text-secondary">{t('adminMachines.modal.groupName')}</label>
                 <input
                   required
                   className="form-input w-full"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="ex: Production, Développement..."
+                  placeholder={t('adminMachines.modal.groupNamePlaceholder')}
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold uppercase text-text-secondary">Description (optionnel)</label>
+                <label className="text-xs font-bold uppercase text-text-secondary">{t('adminMachines.modal.groupDescription')}</label>
                 <textarea
                   className="form-input w-full resize-none"
                   rows={3}
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Décrivez le rôle de ce groupe..."
+                  placeholder={t('adminMachines.modal.groupDescPlaceholder')}
                 />
               </div>
 
@@ -279,10 +311,10 @@ const AdminMachineGroups: React.FC = () => {
                   }}
                   className="btn-secondary flex-1 text-sm"
                 >
-                  Annuler
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" className="btn-primary flex-1 text-sm">
-                  {editingId ? 'Modifier' : 'Créer'}
+                  {editingId ? t('common.edit') : t('common.create')}
                 </button>
               </div>
             </form>

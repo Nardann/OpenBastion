@@ -182,6 +182,9 @@ model AuditLog {
   ipAddress   String?
   timestamp   DateTime @default(now())
   metadata    Json?
+  // HMAC-SHA256 over (id+action+userId+timestamp+category+ipAddress+metadata)
+  // Allows detecting tampering even if the row is modified directly in the DB.
+  hmac        String?
 
   @@index([category])
   @@index([timestamp(sort: Desc)])

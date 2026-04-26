@@ -1,23 +1,31 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultService } from '../vault/vault.service';
 
+const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
 @Injectable()
-export class MonitoringService {
+export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MonitoringService.name);
+  private healthTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private prisma: PrismaService,
     private vault: VaultService,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  onModuleInit() {
+    this.healthTimer = setInterval(() => void this.runHealthCheck(), HEALTH_CHECK_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.healthTimer !== undefined) clearInterval(this.healthTimer);
+  }
+
   async runHealthCheck() {
     this.logger.log('Starting System Integrity Scan...');
 
     try {
-      // SECURITY FIX: Improved health check with timeout and performance monitoring
       await this.checkDatabaseHealth();
       await this.checkVaultIntegrity();
 
@@ -30,7 +38,6 @@ export class MonitoringService {
   private async checkDatabaseHealth(): Promise<void> {
     const startTime = Date.now();
     try {
-      // Test critical table accessibility with timeout
       await Promise.race([
         this.prisma.user.count({ take: 1 }),
         new Promise((_, reject) =>
@@ -54,8 +61,6 @@ export class MonitoringService {
 
   private async checkVaultIntegrity(): Promise<void> {
     try {
-      // Vault Integrity Check
-      // We try to encrypt/decrypt a test string to ensure Master Key is still functional
       const testContext = 'system-health-check';
       const testData = 'bastion-integrity-test';
       const encrypted = this.vault.encrypt(testData, testContext);

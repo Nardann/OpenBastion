@@ -1,19 +1,27 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import * as crypto from 'node:crypto';
+import { TOKEN_BLACKLIST_CLEANUP_INTERVAL_MS } from '../common/constants/security.constants';
 
 @Injectable()
-export class TokenBlacklistService {
+export class TokenBlacklistService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TokenBlacklistService.name);
+  private cleanupTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
 
-  @Cron(CronExpression.EVERY_HOUR)
+  onModuleInit() {
+    this.cleanupTimer = setInterval(() => void this.cleanupExpiredTokens(), TOKEN_BLACKLIST_CLEANUP_INTERVAL_MS);
+  }
+
+  onModuleDestroy() {
+    if (this.cleanupTimer !== undefined) clearInterval(this.cleanupTimer);
+  }
+
   async cleanupExpiredTokens() {
     try {
       const { count } = await this.prisma.blacklistedToken.deleteMany({

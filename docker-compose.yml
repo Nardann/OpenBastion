@@ -16,7 +16,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data_v17
     volumes:
-      - ./pg_data_new:/var/lib/postgresql
+      - ./pg_data:/var/lib/postgresql
       - ./scripts/init-db:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
@@ -38,7 +38,7 @@ services:
     # Hardening : rien a ecrire, aucun privilege, tmpfs pour logs runtime.
     read_only: true
     tmpfs:
-      - /tmp:size=16m
+      - /tmp:size=16m,noexec,nosuid
     security_opt:
       - no-new-privileges:true
     cap_drop:

@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const ALLOWED_LANGS = ['fr', 'en'];
@@ -34,7 +34,7 @@ export class SettingsService implements OnModuleInit {
   }
 
   async setDefaultLang(lang: string): Promise<void> {
-    if (!ALLOWED_LANGS.includes(lang)) throw new Error('Unsupported language');
+    if (!ALLOWED_LANGS.includes(lang)) throw new BadRequestException('Unsupported language');
     await this.set('defaultLang', lang);
   }
 }

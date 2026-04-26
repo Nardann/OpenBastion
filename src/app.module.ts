@@ -11,7 +11,6 @@ import { TerminalModule } from './terminal/terminal.module';
 import { AuditModule } from './audit/audit.module';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_INTERCEPTOR, APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { ScheduleModule } from '@nestjs/schedule';
 import { RbacModule } from './rbac/rbac.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { SettingsModule } from './settings/settings.module';
@@ -34,7 +33,6 @@ import {
     MachinesModule,
     TerminalModule,
     AuditModule,
-    ScheduleModule.forRoot(),
     RbacModule,
     MonitoringModule,
     SettingsModule,

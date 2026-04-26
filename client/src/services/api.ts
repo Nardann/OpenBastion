@@ -15,20 +15,31 @@ interface ApiResponse<T> {
   ok: boolean;
 }
 
+const REQUEST_TIMEOUT_MS = 15_000;
+
 async function request<T = any>(endpoint: string, { data, ...customConfig }: RequestOptions = {}): Promise<ApiResponse<T>> {
   const headers = { 'Content-Type': 'application/json', ...customConfig.headers } as any;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   const config: RequestInit = {
     ...customConfig,
     headers,
     credentials: 'include', // SECURITY FIX: Include cookies in all requests for JWT auth
+    signal: controller.signal,
   };
 
   if (data) {
     config.body = JSON.stringify(data);
   }
 
-  const response = await fetch(endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`, config);
+  let response: globalThis.Response;
+  try {
+    response = await fetch(endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`, config);
+  } finally {
+    clearTimeout(timeoutId);
+  }
   
   if (response.status === 401 || response.status === 403) {
     // SECURITY: Only trigger global logout for session check, not for specific credential errors

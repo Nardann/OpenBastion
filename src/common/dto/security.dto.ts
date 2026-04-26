@@ -18,8 +18,8 @@ import { Type, Transform } from 'class-transformer';
 import { Role, Protocol, RdpSecurity } from '@prisma/client';
 
 const SAFE_TEXT_REGEX = /^[a-zA-Z0-9\s._-]*$/; // Allow empty strings
-const IP_HOSTNAME_REGEX = /^[^<>"&]+$/;
-const USERNAME_REGEX = /^[^<>"&]+$/;
+const IP_HOSTNAME_REGEX = /^[a-zA-Z0-9._-]+$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9._@\-\\]+$/;
 // Simplified password complexity check to avoid Regex syntax issues
 const PASSWORD_REGEX =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*()_\-=[\]{};':",.<>/?\\|`~]).+$/;

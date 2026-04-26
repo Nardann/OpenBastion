@@ -7,19 +7,25 @@ import {
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LdapService } from './ldap.service';
+import { VaultService } from '../vault/vault.service';
 import * as argon2 from 'argon2';
 import { AuthMethod } from '@prisma/client';
-import { authenticator } from 'otplib';
+import { generateSecret, keyuri, verify as totpVerify } from './totp';
 import * as qrcode from 'qrcode';
+
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_LOCKOUT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly otpFailures = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
     private ldapService: LdapService,
+    private vault: VaultService,
   ) {}
 
   async changePassword(
@@ -96,24 +102,60 @@ export class AuthService {
     const user = await this.usersService.findOneById(userId);
     if (!user) throw new BadRequestException('Utilisateur introuvable');
 
-    const secret = authenticator.generateSecret();
-    const otpauth = authenticator.keyuri(user.email, 'OpenBastion', secret);
+    const secret = generateSecret();
+    const otpauth = keyuri(user.email, 'OpenBastion', secret);
     const qrCode = await qrcode.toDataURL(otpauth);
 
-    // LOW-03 FIX: Store secret in pending field (not enabled yet)
-    await this.usersService.update(userId, { pendingOtpSecret: secret });
+    await this.usersService.update(userId, {
+      pendingOtpSecret: this.vault.encrypt(secret, `otp-pending:${userId}`),
+    });
 
     return { secret, qrCode };
   }
 
   async verifyOtp(userId: string, code: string): Promise<boolean> {
+    const now = Date.now();
+    const entry = this.otpFailures.get(userId);
+    if (entry && now < entry.resetAt && entry.count >= OTP_MAX_ATTEMPTS) {
+      throw new UnauthorizedException('Too many OTP attempts. Please wait before retrying.');
+    }
+
     const user = await this.usersService.findOneById(userId);
     if (!user || !user.otpSecret) return false;
 
-    return authenticator.verify({
-      token: code,
-      secret: user.otpSecret,
-    });
+    let rawSecret: string;
+    try {
+      rawSecret = this.vault.decrypt(user.otpSecret, `otp:${userId}`);
+    } catch {
+      rawSecret = user.otpSecret;
+      const valid = totpVerify({ token: code, secret: rawSecret });
+      if (valid) {
+        this.otpFailures.delete(userId);
+        await this.usersService.update(userId, {
+          otpSecret: this.vault.encrypt(rawSecret, `otp:${userId}`),
+        });
+      } else {
+        this.recordOtpFailure(userId, now);
+      }
+      return valid;
+    }
+
+    const valid = totpVerify({ token: code, secret: rawSecret });
+    if (valid) {
+      this.otpFailures.delete(userId);
+    } else {
+      this.recordOtpFailure(userId, now);
+    }
+    return valid;
+  }
+
+  private recordOtpFailure(userId: string, now: number): void {
+    const entry = this.otpFailures.get(userId);
+    if (entry && now < entry.resetAt) {
+      entry.count++;
+    } else {
+      this.otpFailures.set(userId, { count: 1, resetAt: now + OTP_LOCKOUT_WINDOW_MS });
+    }
   }
 
   async enableOtp(userId: string, code: string) {
@@ -124,15 +166,19 @@ export class AuthService {
       );
     }
 
-    const isValid = authenticator.verify({
-      token: code,
-      secret: user.pendingOtpSecret,
-    });
+    let rawPending: string;
+    try {
+      rawPending = this.vault.decrypt(user.pendingOtpSecret, `otp-pending:${userId}`);
+    } catch {
+      throw new BadRequestException('Secret OTP en attente invalide ou corrompu');
+    }
+
+    const isValid = totpVerify({ token: code, secret: rawPending });
     if (!isValid) throw new BadRequestException('Code OTP invalide');
 
     return this.usersService.update(userId, {
       isOtpEnabled: true,
-      otpSecret: user.pendingOtpSecret,
+      otpSecret: this.vault.encrypt(rawPending, `otp:${userId}`),
       pendingOtpSecret: null,
     });
   }

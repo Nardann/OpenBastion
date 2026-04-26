@@ -173,19 +173,19 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private getClientIp(client: Socket): string {
     const forwardedFor = client.handshake.headers['x-forwarded-for'];
+    const ipv4 = /^(\d{1,3}\.){3}\d{1,3}$/;
+    const ipv6 = /^[0-9a-fA-F:]+$/;
     if (forwardedFor) {
-      if (Array.isArray(forwardedFor)) {
-        return forwardedFor[0] || client.handshake.address;
-      }
-      return forwardedFor.split(',')[0]?.trim() || client.handshake.address;
+      const raw = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor.split(',')[0];
+      const candidate = raw?.trim() ?? '';
+      if (ipv4.test(candidate) || ipv6.test(candidate)) return candidate;
     }
     return client.handshake.address;
   }
 
   private createInactivityTimer(client: Socket): NodeJS.Timeout {
-    const INACTIVITY_TIMEOUT_MS = parseInt(
-      process.env['SESSION_INACTIVITY_MS'] ?? '1800000',
-    ); // 30 minutes default
+    const parsed = parseInt(process.env['SESSION_INACTIVITY_MS'] ?? '');
+    const INACTIVITY_TIMEOUT_MS = Number.isFinite(parsed) && parsed > 0 ? parsed : 1_800_000; // 30 minutes default
     return setTimeout(() => {
       this.logger.warn(`Session ${client.id} closed due to inactivity`);
       client.emit('error', 'Session closed due to inactivity');
@@ -329,7 +329,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       if (
         !session.accessCache ||
-        nowChecked - session.accessCache.lastChecked > 30000
+        nowChecked - session.accessCache.lastChecked > 5_000
       ) {
         isAllowed = await this.rbacService.hasAccess(
           user.sub,
@@ -372,7 +372,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
     let isAllowed = session.accessCache?.allowed;
     if (
       !session.accessCache ||
-      nowChecked - session.accessCache.lastChecked > 30000
+      nowChecked - session.accessCache.lastChecked > 5_000
     ) {
       isAllowed = await this.rbacService.hasAccess(
         user.sub,

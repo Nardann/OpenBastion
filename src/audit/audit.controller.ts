@@ -4,6 +4,8 @@ import {
   UseGuards,
   Query,
   BadRequestException,
+  ParseIntPipe,
+  DefaultValuePipe,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuditService, AuditCategory } from './audit.service';
@@ -40,5 +42,14 @@ export class AuditController {
     }
 
     return this.auditService.getLogs(category, pageNumber, limitNumber);
+  }
+
+  @Get('verify-integrity')
+  @Roles(Role.ADMIN)
+  async verifyIntegrity(
+    @Query('limit', new DefaultValuePipe(1000), ParseIntPipe) limit: number,
+  ) {
+    const safeLimit = Math.min(Math.max(limit, 1), 10_000);
+    return this.auditService.verifyIntegrity(safeLimit);
   }
 }

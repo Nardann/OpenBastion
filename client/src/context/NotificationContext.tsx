@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { AlertTriangle, CheckCircle2, Info, XCircle, X } from 'lucide-react';
 
 export type NotificationType = 'error' | 'success' | 'warning' | 'info';
@@ -34,8 +34,14 @@ const TYPE_STYLES: Record<NotificationType, { bg: string; border: string; text: 
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const timersRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number) => {
+    const timer = timersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
@@ -44,9 +50,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const duration = input.duration ?? 6000;
     setNotifications(prev => [...prev, { id, ...input, duration }]);
     if (duration > 0) {
-      setTimeout(() => dismiss(id), duration);
+      const timer = setTimeout(() => {
+        timersRef.current.delete(id);
+        setNotifications(prev => prev.filter(n => n.id !== id));
+      }, duration);
+      timersRef.current.set(id, timer);
     }
-  }, [dismiss]);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(timer => clearTimeout(timer));
+      timersRef.current.clear();
+    };
+  }, []);
 
   return (
     <NotificationContext.Provider value={{ notify, dismiss }}>

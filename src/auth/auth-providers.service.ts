@@ -20,8 +20,10 @@ export class AuthProvidersService {
     );
   }
 
-  private decryptConfig(encrypted: any, providerId: string): any {
-    if (typeof encrypted !== 'string' || !encrypted.includes(':')) {
+  decryptConfig(encrypted: any, providerId: string): any {
+    // AES-256-GCM format: <24-hex-iv>:<hex-ciphertext>:<32-hex-tag>
+    const AES_GCM_PATTERN = /^[0-9a-f]{24}:[0-9a-f]+:[0-9a-f]{32}$/;
+    if (typeof encrypted !== 'string' || !AES_GCM_PATTERN.test(encrypted)) {
       // HIGH-03 FIX: Critical alert for unencrypted config, refuse to serve
       this.logger.error(
         `SECURITY: Auth provider ${providerId} has unencrypted config. ` +
