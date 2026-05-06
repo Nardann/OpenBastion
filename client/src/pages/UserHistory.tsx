@@ -130,7 +130,7 @@ const UserHistory: React.FC = () => {
               )}
               {!loading && data?.items.map((rec) => (
                 <tr key={rec.id} className="border-b border-border-light hover:bg-background-app transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-text-secondary">
+                  <td className="px-4 py-3 font-mono text-xs text-text-secondary rail-ambre">
                     {rec.sessionId.slice(0, 8)}…
                   </td>
                   <td className="px-4 py-3 text-text-main text-sm">
@@ -140,7 +140,7 @@ const UserHistory: React.FC = () => {
                   <td className="px-4 py-3 text-text-secondary">
                     {rec.endedAt
                       ? fmt(rec.endedAt)
-                      : <span className="text-warning text-xs">{t('history.inProgress')}</span>}
+                      : <span className="t-eyebrow-ambre">{t('history.inProgress')}</span>}
                   </td>
                   <td className="px-4 py-3 text-text-secondary">{fmtSize(rec.sizeBytes)}</td>
                   <td className="px-4 py-3 text-right">

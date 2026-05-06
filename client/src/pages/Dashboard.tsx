@@ -142,7 +142,7 @@ const Dashboard: React.FC = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-8 py-10">
-        <div className="mb-10">
+        <div className="mb-10 fade-up">
           <h1 className="t-h1 text-text-main mb-1">{t('dashboard.title')}</h1>
           <p className="text-text-secondary text-sm">{t('dashboard.subtitle')}</p>
         </div>
@@ -192,7 +192,7 @@ const Dashboard: React.FC = () => {
             {machines.map((machine) => (
               <div
                 key={machine.id}
-                className="group bg-background-surface p-6 rounded-lg border border-border-light hover:border-primary/50 transition-all duration-200 shadow-sm flex flex-col"
+                className="group bg-background-surface p-6 rounded-lg border border-border-light shadow-sm flex flex-col card-lift rail-ambre"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="p-3 bg-primary/5 rounded-lg text-primary">
@@ -205,7 +205,7 @@ const Dashboard: React.FC = () => {
 
                 <h3 className="text-lg font-bold text-text-main mb-1">{machine.name}</h3>
                 <div className="flex items-center gap-2 mb-4">
-                  <div className="w-2 h-2 rounded-full bg-success" />
+                  <span className="dot-live" />
                   <span className="text-xs font-mono text-text-secondary">{machine.ip}:{machine.port}</span>
                 </div>
 

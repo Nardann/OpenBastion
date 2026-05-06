@@ -80,7 +80,7 @@ const AdminLogs: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="t-h1 text-text-main">{t('adminLogs.title')}</h1>
+          <h1 className="t-h1 text-text-main fade-up">{t('adminLogs.title')}</h1>
           <p className="text-text-secondary mt-1 text-sm">{t('adminLogs.subtitle')}</p>
         </div>
         <button
@@ -135,7 +135,7 @@ const AdminLogs: React.FC = () => {
                       onClick={() => setSelectedLog(log)}
                       className="group hover:bg-background-app transition-colors cursor-pointer"
                     >
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 rail-ambre">
                         <div className="flex items-center gap-3">
                           <div className={`p-2 rounded-md ${log.category === 'AUTH' ? 'bg-warning/10 text-warning' : 'bg-primary/10 text-primary'}`}>
                             <FileText size={16} />
@@ -236,8 +236,8 @@ const AdminLogs: React.FC = () => {
                   <h3 className="text-xs font-bold uppercase tracking-widest text-primary flex items-center gap-2">
                     <Fingerprint size={14} /> {t('adminLogs.detail.metadata')}
                   </h3>
-                  <div className="bg-text-main rounded-lg p-6 border border-border-light shadow-inner">
-                    <pre className="text-[11px] text-success font-mono overflow-x-auto">
+                  <div className="bg-[#0E2E5C] dark:bg-[#1C1200] rounded-lg p-6 border border-[rgba(14,46,92,0.3)] dark:border-[rgba(245,165,36,0.15)] shadow-inner">
+                    <pre className="text-[11px] text-[#A8C4E8] dark:text-[#F5A524] font-mono overflow-x-auto">
                       {JSON.stringify(selectedLog.metadata, null, 2)}
                     </pre>
                   </div>

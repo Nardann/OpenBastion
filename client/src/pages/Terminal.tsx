@@ -48,8 +48,10 @@ const Terminal: React.FC = () => {
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(terminalRef.current);
-    fitAddon.fit();
     xtermRef.current = term;
+
+    // Defer fit until the browser has finished laying out the container
+    requestAnimationFrame(() => fitAddon.fit());
 
     const socket = io('/terminal', {
       path: '/api/socket.io',
@@ -95,8 +97,8 @@ const Terminal: React.FC = () => {
       socket.emit('resize', size);
     });
 
-    const handleResize = () => fitAddon.fit();
-    window.addEventListener('resize', handleResize);
+    const ro = new ResizeObserver(() => fitAddon.fit());
+    ro.observe(terminalRef.current);
 
     const blockEvent = (e: Event) => {
       if (!allowCopyPasteRef.current) {
@@ -121,9 +123,9 @@ const Terminal: React.FC = () => {
     }
 
     return () => {
+      ro.disconnect();
       socket.disconnect();
       term.dispose();
-      window.removeEventListener('resize', handleResize);
       if (container) {
         container.removeEventListener('paste', blockEvent, true);
         container.removeEventListener('contextmenu', blockContextMenu, true);
@@ -159,7 +161,7 @@ const Terminal: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 relative overflow-hidden p-4">
+      <div className="flex-1 relative overflow-hidden p-2">
         {status === 'connecting' && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
