@@ -194,7 +194,7 @@ const AdminUsers: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="t-h1 text-text-main">{t('adminUsers.title')}</h1>
+          <h1 className="t-h1 text-text-main fade-up">{t('adminUsers.title')}</h1>
           <p className="text-text-secondary mt-1 text-sm">{t('adminUsers.subtitle')}</p>
         </div>
       </div>

@@ -52,7 +52,7 @@ const AdminDashboard: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {cards.map((card) => (
-          <div key={card.label} className="card-subtle p-6 flex items-center gap-4">
+          <div key={card.label} className="card-subtle card-lift p-6 flex items-center gap-4">
             <div className={`p-3 bg-background-app rounded-lg ${card.color}`}>
               {card.icon}
             </div>
@@ -71,9 +71,9 @@ const AdminDashboard: React.FC = () => {
             {t('adminDashboard.systemStatus')}
           </h2>
           <div className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-background-app rounded-md border border-border-light">
+            <div className="flex justify-between items-center p-3 bg-background-app rounded-md border border-border-light rail-ambre">
               <span className="text-sm font-medium text-text-main">{t('adminDashboard.backend')}</span>
-              <span className="pill-badge bg-success/10 text-success text-[10px] uppercase font-bold">{t('adminDashboard.online')}</span>
+              <span className="flex items-center gap-2 pill-badge bg-success/10 text-success text-[10px] uppercase font-bold"><span className="dot-live" />{t('adminDashboard.online')}</span>
             </div>
             <div className="flex justify-between items-center p-3 bg-background-app rounded-md border border-border-light">
               <span className="text-sm font-medium text-text-main">{t('adminDashboard.ssh')}</span>

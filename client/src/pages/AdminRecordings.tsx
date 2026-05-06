@@ -51,7 +51,7 @@ const AdminRecordings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <h1 className="t-h1 text-text-main flex items-center gap-2">
+      <h1 className="t-h1 text-text-main flex items-center gap-2 fade-up">
         <Video size={24} className="text-primary" />
         Enregistrements de sessions
       </h1>
@@ -113,7 +113,7 @@ const AdminRecordings: React.FC = () => {
             )}
             {!loading && data?.items.map((rec) => (
               <tr key={rec.id} className="border-b border-border-light hover:bg-background-app transition-colors">
-                <td className="px-4 py-3 font-mono text-xs text-text-secondary">
+                <td className="px-4 py-3 font-mono text-xs text-text-secondary rail-ambre">
                   {rec.sessionId.slice(0, 8)}…
                 </td>
                 <td className="px-4 py-3 text-text-main text-sm">
@@ -122,7 +122,7 @@ const AdminRecordings: React.FC = () => {
                 <td className="px-4 py-3 text-text-main">{rec.machineName ?? rec.machineId.slice(0, 8) + '…'}</td>
                 <td className="px-4 py-3 text-text-secondary">{fmt(rec.startedAt)}</td>
                 <td className="px-4 py-3 text-text-secondary">
-                  {rec.endedAt ? fmt(rec.endedAt) : <span className="text-warning text-xs">En cours</span>}
+                  {rec.endedAt ? fmt(rec.endedAt) : <span className="t-eyebrow-ambre">En cours</span>}
                 </td>
                 <td className="px-4 py-3 text-text-secondary">{fmtSize(rec.sizeBytes)}</td>
                 <td className="px-4 py-3 text-right">

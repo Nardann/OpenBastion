@@ -218,3 +218,126 @@ body {
 .bg-primary-halo {
   background: radial-gradient(circle at 50% 40%, var(--color-primary-soft) 0%, transparent 60%);
 }
+
+/* === Background composite for hero/auth pages === */
+.bg-composite {
+  position: relative;
+  isolation: isolate;
+}
+.bg-composite::before,
+.bg-composite::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+}
+.bg-composite::before {
+  background-image:
+    linear-gradient(var(--border-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-light) 1px, transparent 1px);
+  background-size: 28px 28px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 80%);
+          mask-image: radial-gradient(ellipse 70% 60% at 50% 40%, #000 30%, transparent 80%);
+  opacity: .55;
+}
+.bg-composite::after {
+  background:
+    radial-gradient(circle at 50% 28%, var(--color-primary-soft) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 100% at 50% 100%, var(--color-accent-soft) 0%, transparent 70%);
+}
+
+/* === Ambre rail (left accent on privileged rows / hover cards) === */
+.rail-ambre {
+  position: relative;
+}
+.rail-ambre::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 14px; bottom: 14px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--color-accent);
+  transform: scaleY(0.3);
+  opacity: 0;
+  transform-origin: center;
+  transition: all 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.rail-ambre.is-active::before,
+.rail-ambre:hover::before {
+  transform: scaleY(1);
+  opacity: 1;
+}
+
+/* === Live dot (green pulse) === */
+.dot-live {
+  position: relative;
+  display: inline-flex;
+  width: 8px;
+  height: 8px;
+}
+.dot-live::before,
+.dot-live::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--color-success);
+}
+.dot-live::before {
+  animation: ob-pulse 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes ob-pulse {
+  0%   { transform: scale(1);   opacity: .7; }
+  80%  { transform: scale(2.6); opacity: 0;  }
+  100% { transform: scale(2.6); opacity: 0;  }
+}
+
+/* === Cascade entry helper === */
+.fade-up {
+  opacity: 0;
+  transform: translateY(8px);
+  animation: ob-fade-up 600ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.fade-up-1 { animation-delay:  80ms; }
+.fade-up-2 { animation-delay: 160ms; }
+.fade-up-3 { animation-delay: 240ms; }
+.fade-up-4 { animation-delay: 320ms; }
+@keyframes ob-fade-up {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* === Card hover lift === */
+.card-lift {
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 240ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-lift:hover {
+  transform: translateY(-2px);
+  border-color: rgba(14, 46, 92, 0.35);
+  box-shadow: 0 12px 28px -16px rgba(6, 9, 22, 0.18), 0 2px 4px rgba(6, 9, 22, 0.04);
+}
+
+/* === Top-rule ambre (auth card crown) === */
+.rule-ambre-top {
+  position: relative;
+}
+.rule-ambre-top::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 32px; right: 32px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--color-accent) 50%, transparent);
+}
+
+/* === Eyebrow ambre (signature caption) === */
+.t-eyebrow-ambre {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-accent-fg);
+}

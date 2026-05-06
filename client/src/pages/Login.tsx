@@ -84,7 +84,7 @@ const Login: React.FC = () => {
   const isOidcEnabled = providers.some(p => p.type === 'OIDC' && p.enabled);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-app bg-grid p-4 relative overflow-hidden transition-colors duration-300">
+    <div className="min-h-screen flex items-center justify-center bg-background-app bg-composite p-4 relative overflow-hidden transition-colors duration-300">
       <div className="absolute top-8 right-8">
         <button
           onClick={toggleTheme}
@@ -94,16 +94,16 @@ const Login: React.FC = () => {
         </button>
       </div>
 
-      <div className="w-full max-w-md z-10 animate-in fade-in zoom-in-95 duration-500">
-        <div className="text-center mb-10">
-          <div className="inline-flex p-4 rounded-2xl bg-primary/10 border border-primary/20 mb-4">
+      <div className="w-full max-w-md z-10">
+        <div className="text-center mb-10 fade-up">
+          <div className="inline-flex p-4 rounded-2xl bg-primary/10 border border-primary/20 mb-4 bg-primary-halo">
             <ShieldCheck className="w-10 h-10 text-primary" />
           </div>
           <h1 className="t-h1 text-text-main">Open-Bastion</h1>
           <p className="t-eyebrow mt-1">{t('login.subtitle')}</p>
         </div>
 
-        <div className="bg-background-surface border border-border-light rounded-xl shadow-lg p-10">
+        <div className="bg-background-surface border border-border-light rounded-xl shadow-lg p-10 rule-ambre-top fade-up fade-up-1">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="p-4 bg-danger/10 border border-danger/20 text-danger rounded-lg text-sm font-medium animate-in slide-in-from-top-2">
