@@ -1,8 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { VaultService } from '../vault/vault.service';
-
-const HEALTH_CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+import { AlertingService } from './alerting.service';
+import {
+  HEALTH_CHECK_INTERVAL_MS,
+  VAULT_INTEGRITY_TEST_TOKEN,
+  VAULT_INTEGRITY_TEST_CONTEXT,
+  DB_HEALTH_SLOW_THRESHOLD_MS,
+  DB_HEALTH_TIMEOUT_MS,
+} from '../common/constants/monitoring.constants';
 
 @Injectable()
 export class MonitoringService implements OnModuleInit, OnModuleDestroy {
@@ -12,6 +18,7 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private vault: VaultService,
+    private alerting: AlertingService,
   ) {}
 
   onModuleInit() {
@@ -24,14 +31,18 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   async runHealthCheck() {
     this.logger.log('Starting System Integrity Scan...');
-
     try {
       await this.checkDatabaseHealth();
       await this.checkVaultIntegrity();
-
       this.logger.log('System Integrity: OK');
     } catch (error: any) {
       this.logger.error(`SYSTEM HEALTH ALERT: ${error.message}`);
+      await this.alerting.alert({
+        title: 'System Health Check Failed',
+        message: error.message,
+        severity: 'critical',
+        metadata: { component: 'health-check' },
+      });
     }
   }
 
@@ -43,14 +54,19 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
         new Promise((_, reject) =>
           setTimeout(
             () => reject(new Error('Database health check timeout')),
-            5000,
+            DB_HEALTH_TIMEOUT_MS,
           ),
         ),
       ]);
 
       const latency = Date.now() - startTime;
-      if (latency > 2000) {
+      if (latency > DB_HEALTH_SLOW_THRESHOLD_MS) {
         this.logger.warn(`Database slow response: ${latency}ms`);
+        await this.alerting.alert({
+          title: 'Database Slow Response',
+          message: `Database latency: ${latency}ms (threshold: ${DB_HEALTH_SLOW_THRESHOLD_MS}ms)`,
+          severity: 'warning',
+        });
       } else {
         this.logger.debug(`Database latency: ${latency}ms`);
       }
@@ -61,15 +77,11 @@ export class MonitoringService implements OnModuleInit, OnModuleDestroy {
 
   private async checkVaultIntegrity(): Promise<void> {
     try {
-      const testContext = 'system-health-check';
-      const testData = 'bastion-integrity-test';
-      const encrypted = this.vault.encrypt(testData, testContext);
-      const decrypted = this.vault.decrypt(encrypted, testContext);
+      const encrypted = this.vault.encrypt(VAULT_INTEGRITY_TEST_TOKEN, VAULT_INTEGRITY_TEST_CONTEXT);
+      const decrypted = this.vault.decrypt(encrypted, VAULT_INTEGRITY_TEST_CONTEXT);
 
-      if (decrypted !== testData) {
-        throw new Error(
-          'Vault integrity check failed: Data mismatch after decryption',
-        );
+      if (decrypted !== VAULT_INTEGRITY_TEST_TOKEN) {
+        throw new Error('Vault integrity check failed: Data mismatch after decryption');
       }
 
       this.logger.debug('Vault integrity: OK');

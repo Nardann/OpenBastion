@@ -14,6 +14,7 @@ import {
   Moon,
   Globe,
   Settings,
+  Video,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { useLang, AVAILABLE_LANGS } from '../context/LangContext';
@@ -30,6 +31,7 @@ const AdminLayout: React.FC = () => {
     { to: '/administration/users', icon: <Users size={20} />, label: t('adminLayout.nav.users') },
     { to: '/administration/auth', icon: <Key size={20} />, label: t('adminLayout.nav.auth') },
     { to: '/administration/logs', icon: <FileText size={20} />, label: t('adminLayout.nav.audit') },
+    { to: '/administration/recordings', icon: <Video size={20} />, label: t('adminLayout.nav.recordings') },
     { to: '/administration/settings', icon: <Settings size={20} />, label: t('adminLayout.nav.settings') },
   ];
 
@@ -40,6 +42,7 @@ const AdminLayout: React.FC = () => {
     if (path.includes('/users')) return t('adminLayout.breadcrumb.users');
     if (path.includes('/auth')) return t('adminLayout.breadcrumb.auth');
     if (path.includes('/logs')) return t('adminLayout.breadcrumb.audit');
+    if (path.includes('/recordings')) return t('adminLayout.breadcrumb.recordings');
     if (path.includes('/settings')) return t('adminLayout.breadcrumb.settings');
     return t('adminLayout.breadcrumb.root');
   };

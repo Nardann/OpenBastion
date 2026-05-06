@@ -9,18 +9,21 @@ import { UsersModule } from './users/users.module';
 import { MachinesModule } from './machines/machines.module';
 import { TerminalModule } from './terminal/terminal.module';
 import { AuditModule } from './audit/audit.module';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { APP_INTERCEPTOR, APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { RbacModule } from './rbac/rbac.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { SettingsModule } from './settings/settings.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import {
   THROTTLE_GLOBAL_TTL,
   THROTTLE_GLOBAL_LIMIT,
   THROTTLE_AUTH_TTL,
   THROTTLE_AUTH_LIMIT,
+  THROTTLE_USER_TTL,
+  THROTTLE_USER_LIMIT_USER,
 } from './common/constants/security.constants';
 
 @Module({
@@ -47,6 +50,11 @@ import {
         ttl: THROTTLE_AUTH_TTL,
         limit: THROTTLE_AUTH_LIMIT,
       },
+      {
+        name: 'user',
+        ttl: THROTTLE_USER_TTL,
+        limit: THROTTLE_USER_LIMIT_USER,
+      },
     ]),
   ],
   controllers: [AppController],
@@ -62,7 +70,7 @@ import {
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: UserThrottlerGuard,
     },
   ],
 })

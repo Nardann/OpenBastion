@@ -9,6 +9,9 @@ import { RbacModule } from '../rbac/rbac.module';
 import { AuthModule } from '../auth/auth.module';
 import { AuditModule } from '../audit/audit.module';
 import { SshModule } from './ssh.module';
+import { SessionRecorderService } from './recording/session-recorder.service';
+import { RecordingController } from './recording/recording.controller';
+import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [
@@ -19,7 +22,9 @@ import { SshModule } from './ssh.module';
     AuthModule,
     AuditModule,
     SshModule,
+    PrismaModule,
   ],
-  providers: [SshGateway, RdpGateway, RdpService],
+  providers: [SshGateway, RdpGateway, RdpService, SessionRecorderService],
+  controllers: [RecordingController],
 })
 export class TerminalModule {}

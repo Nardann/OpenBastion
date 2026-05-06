@@ -16,6 +16,8 @@ import AdminMachines from './pages/AdminMachines';
 import AdminLogs from './pages/AdminLogs';
 import AdminUsers from './pages/AdminUsers';
 import AdminProviders from './pages/AdminProviders';
+import AdminRecordings from './pages/AdminRecordings';
+import UserHistory from './pages/UserHistory';
 import { Loader2, ShieldCheck, Lock } from 'lucide-react';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ children, adminOnly }) => {
@@ -76,7 +78,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
             )}
 
             <div className="space-y-2">
-              <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">
+              <label className="t-eyebrow px-1">
                 {user.isOtpEnabled ? t('sudo.otpLabel') : t('sudo.confirmLabel')}
               </label>
               <div className="relative group">
@@ -116,7 +118,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
             <button
               type="button"
               onClick={() => window.history.back()}
-              className="w-full text-[10px] font-bold text-text-secondary uppercase hover:text-text-main transition-colors"
+              className="w-full t-eyebrow hover:text-text-main transition-colors"
             >
               {t('sudo.cancel')}
             </button>
@@ -171,6 +173,14 @@ const App: React.FC = () => {
               }
             />
             <Route
+              path="/history"
+              element={
+                <ProtectedRoute>
+                  <UserHistory />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/administration"
               element={
                 <ProtectedRoute adminOnly>
@@ -183,6 +193,7 @@ const App: React.FC = () => {
               <Route path="logs" element={<AdminLogs />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="auth" element={<AdminProviders />} />
+              <Route path="recordings" element={<AdminRecordings />} />
               <Route path="settings" element={<AdminSettings />} />
             </Route>
             </Routes>

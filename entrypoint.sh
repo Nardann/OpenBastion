@@ -13,5 +13,8 @@ fi
 echo "Generating Prisma client..."
 npx prisma generate
 
+echo "Applying schema migrations..."
+npx prisma db push --accept-data-loss --skip-generate
+
 echo "Starting NestJS application..."
 exec su -s /bin/sh nestjs -c "npm run start:prod"

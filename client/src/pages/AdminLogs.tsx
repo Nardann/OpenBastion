@@ -80,7 +80,7 @@ const AdminLogs: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-text-main">{t('adminLogs.title')}</h1>
+          <h1 className="t-h1 text-text-main">{t('adminLogs.title')}</h1>
           <p className="text-text-secondary mt-1 text-sm">{t('adminLogs.subtitle')}</p>
         </div>
         <button
@@ -193,19 +193,19 @@ const AdminLogs: React.FC = () => {
             <div className="p-8 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.action')}</p>
+                  <p className="t-eyebrow">{t('adminLogs.detail.action')}</p>
                   <p className="text-sm font-bold text-text-main bg-primary/5 p-2 rounded-md border border-primary/10">{selectedLog.action}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.category')}</p>
+                  <p className="t-eyebrow">{t('adminLogs.detail.category')}</p>
                   <p className="pill-badge bg-background-app text-text-main border border-border-light inline-block px-3 py-1 mt-1">{selectedLog.category || 'SYSTEM'}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.timestamp')}</p>
+                  <p className="t-eyebrow">{t('adminLogs.detail.timestamp')}</p>
                   <p className="text-sm font-mono flex items-center gap-2 text-text-main"><Clock size={14} className="text-neutral" /> {new Date(selectedLog.timestamp).toLocaleString()}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-text-secondary">{t('adminLogs.detail.ip')}</p>
+                  <p className="t-eyebrow">{t('adminLogs.detail.ip')}</p>
                   <p className="text-sm font-mono flex items-center gap-2 text-text-main"><Globe size={14} className="text-neutral" /> {selectedLog.ipAddress}</p>
                 </div>
               </div>
@@ -226,7 +226,7 @@ const AdminLogs: React.FC = () => {
                     <span className="pill-badge bg-primary text-white text-[10px] font-bold uppercase">
                       {selectedLog.user?.role || t('adminLogs.detail.systemActor')}
                     </span>
-                    <p className="text-[10px] mt-1 text-text-secondary uppercase font-medium">{selectedLog.authMethod || t('adminLogs.detail.internalIp')}</p>
+                    <p className="t-eyebrow mt-1">{selectedLog.authMethod || t('adminLogs.detail.internalIp')}</p>
                   </div>
                 </div>
               </div>

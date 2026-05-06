@@ -204,3 +204,42 @@ model BlacklistedToken {
 
   @@index([expiresAt])
 }
+
+model OtpLockout {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  attempts   Int      @default(0)
+  lockedUntil DateTime?
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
+  @@index([lockedUntil])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  jti       String   @unique
+  userId    String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model SessionRecording {
+  id          String    @id @default(uuid())
+  sessionId   String    @unique
+  userId      String
+  machineId   String
+  filePath    String
+  sizeBytes   Int       @default(0)
+  sha256      String?
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+
+  @@index([userId])
+  @@index([machineId])
+  @@index([startedAt(sort: Desc)])
+}

@@ -332,7 +332,7 @@ const AdminMachines = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-bold text-text-main">{t('adminMachines.title')}</h1>
+          <h1 className="t-h1 text-text-main">{t('adminMachines.title')}</h1>
           <p className="text-text-secondary mt-1 text-sm">{t('adminMachines.subtitle')}</p>
         </div>
       </div>
@@ -387,7 +387,7 @@ const AdminMachines = () => {
                           </div>
                           <div>
                             <p className="font-bold text-sm text-text-main leading-none">{machine.name}</p>
-                            <p className="text-[10px] text-text-secondary font-mono mt-1 uppercase tracking-wider">{machine.protocol} • {machine.ip}:{machine.port}</p>
+                            <p className="t-eyebrow mt-1">{machine.protocol} • {machine.ip}:{machine.port}</p>
                           </div>
                         </div>
                       </td>
@@ -457,7 +457,7 @@ const AdminMachines = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-text-main truncate leading-none">{group.name}</h3>
-                        <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-1.5 font-medium">
+                        <p className="t-eyebrow mt-1.5">
                           {group.machines.length} machine{group.machines.length !== 1 ? 's' : ''}
                         </p>
                       </div>
@@ -533,7 +533,7 @@ const AdminMachines = () => {
                   <h2 className="text-xl font-bold text-text-main leading-none">
                     {selectedMachine ? selectedMachine.name : selectedMachineGroup.name}
                   </h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-1.5 font-bold">
+                  <p className="t-eyebrow mt-1.5">
                     {selectedMachine ? `${t('common.permissions')}: ${selectedMachine.ip}` : t('common.permissions')}
                   </p>
                 </div>
@@ -543,11 +543,11 @@ const AdminMachines = () => {
 
             <div className="p-8 space-y-8 overflow-y-auto max-h-[70vh]">
               <div className="space-y-4">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-primary">{t('adminMachines.perm.title')}</h3>
+                <h3 className="t-eyebrow text-primary">{t('adminMachines.perm.title')}</h3>
                 <form onSubmit={handlePermSubmit} className="bg-background-app p-6 rounded-xl border border-border-light flex flex-col gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.perm.entityType')}</label>
+                      <label className="t-eyebrow ml-1">{t('adminMachines.perm.entityType')}</label>
                       <select
                         className="form-input w-full h-11 text-sm font-medium"
                         value={permFormData.targetType}
@@ -559,7 +559,7 @@ const AdminMachines = () => {
                     </div>
 
                     <div className="space-y-1.5 relative">
-                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.perm.entityType')}</label>
+                      <label className="t-eyebrow ml-1">{t('adminMachines.perm.entityType')}</label>
                       {selectedTarget ? (
                         <div className="flex items-center justify-between w-full h-11 bg-primary/10 border border-primary/30 rounded-lg px-4 animate-in zoom-in-95">
                           <span className="text-sm font-bold text-primary flex items-center gap-2">
@@ -605,7 +605,7 @@ const AdminMachines = () => {
 
                   <div className="flex flex-col md:flex-row items-end gap-4 pt-2">
                     <div className="flex-1 w-full space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.perm.level')}</label>
+                      <label className="t-eyebrow ml-1">{t('adminMachines.perm.level')}</label>
                       <div className="grid grid-cols-3 gap-2">
                         {(['VIEWER', 'OPERATOR', 'OWNER'] as const).map((lvl) => (
                           <button
@@ -635,7 +635,7 @@ const AdminMachines = () => {
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-text-secondary px-1">{t('adminMachines.perm.list')}</h3>
+                <h3 className="t-eyebrow px-1">{t('adminMachines.perm.list')}</h3>
                 <div className="bg-background-app rounded-xl border border-border-light divide-y divide-border-light">
                   {permissions.length === 0 ? (
                     <div className="text-center py-12 px-6">
@@ -701,8 +701,8 @@ const AdminMachines = () => {
                   {editingId ? <Edit2 size={28} /> : <Plus size={28} />}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-text-main leading-none">{editingId ? t('adminMachines.modal.editTitle') : t('adminMachines.modal.newTitle')}</h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-2 font-bold">{t('adminMachines.modal.subtitle')}</p>
+                  <h2 className="t-h1 text-text-main leading-none">{editingId ? t('adminMachines.modal.editTitle') : t('adminMachines.modal.newTitle')}</h2>
+                  <p className="t-eyebrow mt-2">{t('adminMachines.modal.subtitle')}</p>
                 </div>
               </div>
               <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={28} /></button>
@@ -712,21 +712,21 @@ const AdminMachines = () => {
               <div className="space-y-6">
                 <h3 className="text-[9px] font-bold uppercase tracking-[0.2em] text-primary bg-primary/5 w-fit px-2 py-1 rounded border border-primary/10">{t('adminMachines.modal.section1')}</h3>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.nameLabel')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminMachines.modal.nameLabel')}</label>
                   <input type="text" className="form-input w-full h-11" placeholder={t('adminMachines.modal.namePlaceholder')} required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                 </div>
                 <div className="grid grid-cols-4 gap-3">
                   <div className="col-span-3 space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.host')}</label>
+                    <label className="t-eyebrow ml-1">{t('adminMachines.modal.host')}</label>
                     <input type="text" className="form-input w-full h-11 font-mono text-sm" placeholder="10.0.0.1" required value={formData.ip} onChange={e => setFormData({ ...formData, ip: e.target.value })} />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.port')}</label>
+                    <label className="t-eyebrow ml-1">{t('adminMachines.modal.port')}</label>
                     <input type="number" className="form-input w-full h-11 font-mono text-sm text-center" required value={formData.port} onChange={e => setFormData({ ...formData, port: parseInt(e.target.value) })} />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.protocol')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminMachines.modal.protocol')}</label>
                   <select
                     className="form-input w-full h-11 font-medium"
                     value={formData.protocol}
@@ -751,14 +751,14 @@ const AdminMachines = () => {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.inventoryGroup')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminMachines.modal.inventoryGroup')}</label>
                   <select className="form-input w-full h-11 font-medium" value={formData.machineGroupId} onChange={e => setFormData({ ...formData, machineGroupId: e.target.value })}>
                     <option value="">{t('common.noGroup')}</option>
                     {machineGroups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.description')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminMachines.modal.description')}</label>
                   <textarea className="form-input w-full h-24 py-3 resize-none" placeholder={t('adminMachines.modal.description')} value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}></textarea>
                 </div>
               </div>
@@ -819,7 +819,7 @@ const AdminMachines = () => {
                   <>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.rdpSecurity')}</label>
+                        <label className="t-eyebrow ml-1">{t('adminMachines.modal.rdpSecurity')}</label>
                         <select
                           className="form-input w-full h-11 font-medium"
                           value={formData.rdpSecurity}
@@ -832,7 +832,7 @@ const AdminMachines = () => {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.rdpDomain')}</label>
+                        <label className="t-eyebrow ml-1">{t('adminMachines.modal.rdpDomain')}</label>
                         <input
                           type="text"
                           className="form-input w-full h-11 font-medium"
@@ -859,16 +859,16 @@ const AdminMachines = () => {
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.username')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminMachines.modal.username')}</label>
                   <input type="text" className="form-input w-full h-11 font-medium" placeholder={t('adminMachines.modal.usernamePlaceholder')} required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.passwordLabel')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminMachines.modal.passwordLabel')}</label>
                   <input type="password" name="new-password" title="password" className="form-input w-full h-11" placeholder={editingId ? t('adminMachines.modal.passwordPlaceholderEdit') : '••••••••'} value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
                 </div>
                 {formData.protocol === 'SSH' && (
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.privateKey')}</label>
+                    <label className="t-eyebrow ml-1">{t('adminMachines.modal.privateKey')}</label>
                     <textarea className="form-input w-full h-24 text-[9px] font-mono py-3 resize-none" placeholder={t('adminMachines.modal.privateKeyPlaceholder')} value={formData.privateKey} onChange={e => setFormData({ ...formData, privateKey: e.target.value })}></textarea>
                   </div>
                 )}
@@ -915,8 +915,8 @@ const AdminMachines = () => {
                   <FolderPlus size={28} />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold text-text-main leading-none">{editingId ? t('adminMachines.modal.groupEditTitle') : t('adminMachines.modal.groupNewTitle')}</h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-[0.2em] mt-2 font-bold">{t('adminMachines.modal.groupOrg')}</p>
+                  <h2 className="t-h1 text-text-main leading-none">{editingId ? t('adminMachines.modal.groupEditTitle') : t('adminMachines.modal.groupNewTitle')}</h2>
+                  <p className="t-eyebrow mt-2">{t('adminMachines.modal.groupOrg')}</p>
                 </div>
               </div>
               <button onClick={() => setIsGroupModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={28} /></button>
@@ -924,11 +924,11 @@ const AdminMachines = () => {
 
             <form onSubmit={handleGroupSubmit} className="space-y-8">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.groupName')}</label>
+                <label className="t-eyebrow ml-1">{t('adminMachines.modal.groupName')}</label>
                 <input type="text" className="form-input w-full h-11" placeholder={t('adminMachines.modal.groupNamePlaceholder')} required value={groupFormData.name} onChange={e => setGroupFormData({ ...groupFormData, name: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminMachines.modal.groupDescription')}</label>
+                <label className="t-eyebrow ml-1">{t('adminMachines.modal.groupDescription')}</label>
                 <textarea className="form-input w-full h-24 py-3 resize-none" placeholder={t('adminMachines.modal.groupDescPlaceholder')} value={groupFormData.description} onChange={e => setGroupFormData({ ...groupFormData, description: e.target.value })}></textarea>
               </div>
 

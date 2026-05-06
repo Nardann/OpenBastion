@@ -74,10 +74,13 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       RECORDINGS_PATH: /var/lib/bastion/recordings
+      RECORDINGS_ENABLED: ${RECORDINGS_ENABLED:-true}
       # Connexion au daemon guacd pour le proxy RDP (reseau interne uniquement)
       GUACD_HOST: ${GUACD_HOST:-guacd}
       GUACD_PORT: ${GUACD_PORT:-4822}
       ENABLE_RDP: ${ENABLE_RDP:-false}
+    volumes:
+      - recordings_data:/var/lib/bastion/recordings
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,3 +101,6 @@ services:
       - ./certs:/etc/nginx/ssl
     depends_on:
       - backend
+
+volumes:
+  recordings_data:

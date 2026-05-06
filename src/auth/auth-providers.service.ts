@@ -2,7 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthProviderType } from '@prisma/client';
 import { VaultService } from '../vault/vault.service';
+import {
+  AuthProviderCreateDto,
+  AuthProviderUpdateDto,
+  LdapProviderConfig,
+  OidcProviderConfig,
+} from './types/auth-provider.types';
 import * as crypto from 'node:crypto';
+
+type ProviderConfig = LdapProviderConfig | OidcProviderConfig;
 
 @Injectable()
 export class AuthProvidersService {
@@ -13,34 +21,32 @@ export class AuthProvidersService {
     private vaultService: VaultService,
   ) {}
 
-  private encryptConfig(config: any, providerId: string): string {
+  private encryptConfig(config: ProviderConfig, providerId: string): string {
     return this.vaultService.encrypt(
       JSON.stringify(config),
       `auth-provider:${providerId}`,
     );
   }
 
-  decryptConfig(encrypted: any, providerId: string): any {
-    // AES-256-GCM format: <24-hex-iv>:<hex-ciphertext>:<32-hex-tag>
+  decryptConfig(encrypted: unknown, providerId: string): ProviderConfig {
     const AES_GCM_PATTERN = /^[0-9a-f]{24}:[0-9a-f]+:[0-9a-f]{32}$/;
     if (typeof encrypted !== 'string' || !AES_GCM_PATTERN.test(encrypted)) {
-      // HIGH-03 FIX: Critical alert for unencrypted config, refuse to serve
       this.logger.error(
         `SECURITY: Auth provider ${providerId} has unencrypted config. ` +
           `Manual re-encryption is required. Returning empty config.`,
       );
-      return {};
+      return {} as ProviderConfig;
     }
 
     try {
       return JSON.parse(
         this.vaultService.decrypt(encrypted, `auth-provider:${providerId}`),
-      );
+      ) as ProviderConfig;
     } catch (e) {
       this.logger.error(
         `SECURITY: Failed to decrypt config for provider ${providerId}: ${e}`,
       );
-      return {};
+      return {} as ProviderConfig;
     }
   }
 
@@ -65,24 +71,26 @@ export class AuthProvidersService {
     };
   }
 
-  async create(data: { name: string; type: AuthProviderType; config: any }) {
+  async create(data: AuthProviderCreateDto) {
     const id = crypto.randomUUID();
     return this.prisma.authProvider.create({
       data: {
         id,
-        ...data,
+        name: data.name,
+        type: data.type as AuthProviderType,
         config: this.encryptConfig(data.config, id),
       },
     });
   }
 
-  async update(id: string, data: any) {
-    if (data.config) {
-      data.config = this.encryptConfig(data.config, id);
+  async update(id: string, data: AuthProviderUpdateDto) {
+    const updateData: Record<string, unknown> = {};
+    if (data.config !== undefined) {
+      updateData['config'] = this.encryptConfig(data.config, id);
     }
-    return this.prisma.authProvider.update({
-      where: { id },
-      data,
-    });
+    if (data.enabled !== undefined) {
+      updateData['enabled'] = data.enabled;
+    }
+    return this.prisma.authProvider.update({ where: { id }, data: updateData });
   }
 }

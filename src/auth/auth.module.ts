@@ -9,6 +9,8 @@ import { LdapService } from './ldap.service';
 import { OidcService } from './oidc.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { OtpLockoutService } from './otp-lockout.service';
+import { RefreshTokenService } from './refresh-token.service';
 import { JWT_EXPIRATION_STRING } from '../common/constants/security.constants';
 import { UsersModule } from '../users/users.module';
 
@@ -32,6 +34,8 @@ import { UsersModule } from '../users/users.module';
     LdapService,
     OidcService,
     TokenBlacklistService,
+    OtpLockoutService,
+    RefreshTokenService,
   ],
   controllers: [AuthController],
   exports: [
@@ -39,6 +43,8 @@ import { UsersModule } from '../users/users.module';
     AuthProvidersService,
     OidcService,
     TokenBlacklistService,
+    OtpLockoutService,
+    RefreshTokenService,
     JwtAuthGuard,
     JwtModule,
     UsersModule,

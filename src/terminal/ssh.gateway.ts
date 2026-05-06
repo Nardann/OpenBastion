@@ -19,7 +19,9 @@ import { parseCookies } from '../common/utils/security';
 import { StartSessionDto, ResizeSessionDto } from './dto/terminal.dto';
 import { AuditService, AuditCategory } from '../audit/audit.service';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
+import { SessionRecorderService } from './recording/session-recorder.service';
 import { getCorsConfig } from '../common/config/cors.config';
+import * as crypto from 'node:crypto';
 
 @WebSocketGateway({
   namespace: 'terminal',
@@ -36,6 +38,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client: any;
       stream: any;
       machineId: string;
+      sessionId: string;
       startTime: Date;
       timeoutId: NodeJS.Timeout;
       inactivityTimer: NodeJS.Timeout;
@@ -66,6 +69,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly rbacService: RbacService,
     private readonly auditService: AuditService,
     private readonly tokenBlacklistService: TokenBlacklistService,
+    private readonly recorder: SessionRecorderService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -144,10 +148,12 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         (new Date().getTime() - session.startTime.getTime()) / 1000,
       );
 
+      await this.recorder.end(session.sessionId);
+
       await this.auditService.logAction(
         user?.sub || null,
         'TERMINAL: SESSION_CLOSED',
-        { machineId: session.machineId, duration: `${duration}s` },
+        { machineId: session.machineId, duration: `${duration}s`, sessionId: session.sessionId },
         user?.authMethod || null,
         this.getClientIp(client),
         AuditCategory.TERMINAL,
@@ -236,6 +242,8 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         allowRebound: machine.allowRebound,
       });
 
+      const sessionId = crypto.randomUUID();
+
       const timeoutId = setTimeout(
         () => {
           this.logger.warn(`Session ${client.id} exceeded max duration`);
@@ -249,9 +257,19 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client: sshClient,
         stream,
         machineId: data.machineId,
+        sessionId,
         startTime: new Date(),
         timeoutId,
         inactivityTimer: this.createInactivityTimer(client),
+      });
+
+      await this.recorder.start({
+        sessionId,
+        userId: user.sub,
+        machineId: data.machineId,
+        cols: data.cols ?? 80,
+        rows: data.rows ?? 24,
+        title: `${machine.name} (${machine.ip})`,
       });
 
       await this.auditService.logAction(
@@ -261,6 +279,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
           machineId: data.machineId,
           machineName: machine.name,
           ip: machine.ip,
+          sessionId,
         },
         user.authMethod,
         this.getClientIp(client),
@@ -276,6 +295,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
           const session = this.sshSessions.get(client.id)!;
           clearTimeout(session.inactivityTimer);
           session.inactivityTimer = this.createInactivityTimer(client);
+          this.recorder.writeOutput(session.sessionId, chunk.toString('utf8'));
         }
         client.emit('output', chunk.toString('utf8'));
       });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Globe, Save, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Globe, Save, CheckCircle2, XCircle, Loader2, Lock, Eye, EyeOff } from 'lucide-react';
 import api from '../services/api';
 import { useLang, AVAILABLE_LANGS } from '../context/LangContext';
 import type { Lang } from '../context/LangContext';
@@ -11,6 +11,13 @@ const AdminSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMessage, setPwMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     api.get('/settings/public')
       .then(res => {
@@ -21,7 +28,7 @@ const AdminSettings: React.FC = () => {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleSave = async () => {
+  const handleSaveLang = async () => {
     try {
       setSaving(true);
       setMessage(null);
@@ -32,6 +39,36 @@ const AdminSettings: React.FC = () => {
       setMessage({ type: 'error', text: err.message || t('adminSettings.language.saveError') });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwMessage(null);
+
+    if (newPassword.length < 12) {
+      setPwMessage({ type: 'error', text: t('adminSettings.password.tooShort') });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwMessage({ type: 'error', text: t('adminSettings.password.mismatch') });
+      return;
+    }
+
+    try {
+      setPwSaving(true);
+      await api.post('/auth/change-password', {
+        currentPassword,
+        password: newPassword,
+      });
+      setPwMessage({ type: 'success', text: t('adminSettings.password.saveSuccess') });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setPwMessage({ type: 'error', text: err.message || t('adminSettings.password.saveError') });
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -59,6 +96,7 @@ const AdminSettings: React.FC = () => {
         </div>
       )}
 
+      {/* Language settings */}
       <div className="bg-background-surface border border-border-light rounded-xl overflow-hidden shadow-sm max-w-lg">
         <div className="p-6 border-b border-border-light bg-background-app flex items-center gap-3">
           <Globe className="text-primary" size={20} />
@@ -87,7 +125,7 @@ const AdminSettings: React.FC = () => {
           </div>
 
           <button
-            onClick={handleSave}
+            onClick={handleSaveLang}
             disabled={saving}
             className="btn-primary w-full flex items-center justify-center gap-2"
           >
@@ -95,6 +133,85 @@ const AdminSettings: React.FC = () => {
             {t('adminSettings.language.save')}
           </button>
         </div>
+      </div>
+
+      {/* Admin password change */}
+      <div className="bg-background-surface border border-border-light rounded-xl overflow-hidden shadow-sm max-w-lg">
+        <div className="p-6 border-b border-border-light bg-background-app flex items-center gap-3">
+          <Lock className="text-primary" size={20} />
+          <div>
+            <h2 className="font-bold text-text-main">{t('adminSettings.password.title')}</h2>
+            <p className="text-xs text-text-secondary mt-0.5">{t('adminSettings.password.subtitle')}</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+          {pwMessage && (
+            <div className={`p-3 rounded-lg border flex items-center gap-2 text-sm ${
+              pwMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              {pwMessage.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+              {pwMessage.text}
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+              {t('adminSettings.password.current')}
+            </label>
+            <div className="relative">
+              <input
+                type={showPw ? 'text' : 'password'}
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                required
+                className="form-input w-full pr-10"
+                autoComplete="current-password"
+              />
+              <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary">
+                {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+              {t('adminSettings.password.new')}
+            </label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              required
+              minLength={12}
+              className="form-input w-full"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-secondary uppercase tracking-widest">
+              {t('adminSettings.password.confirm')}
+            </label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              required
+              className="form-input w-full"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={pwSaving}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
+            {pwSaving ? <Loader2 size={18} className="animate-spin" /> : <Lock size={18} />}
+            {t('adminSettings.password.save')}
+          </button>
+        </form>
       </div>
     </div>
   );

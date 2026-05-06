@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import { Server, Terminal as TerminalIcon, Monitor, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon, FolderOpen, X, Globe } from 'lucide-react';
+import { Server, Terminal as TerminalIcon, Monitor, LogOut, ShieldCheck, User as UserIcon, Settings, Sun, Moon, FolderOpen, X, Globe, History } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useLang, AVAILABLE_LANGS } from '../context/LangContext';
@@ -84,7 +84,7 @@ const Dashboard: React.FC = () => {
         <div className="max-w-7xl mx-auto px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <ShieldCheck className="w-6 h-6 text-primary" />
-            <span className="text-xl font-bold tracking-tight text-text-main">{t('nav.brand')}</span>
+            <span className="font-display text-xl font-bold tracking-tight text-text-main">{t('nav.brand')}</span>
           </div>
 
           <div className="flex items-center gap-4">
@@ -102,6 +102,14 @@ const Dashboard: React.FC = () => {
             >
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
+
+            <Link
+              to="/history"
+              className="flex items-center gap-2 text-text-secondary hover:text-primary transition-colors text-sm font-medium"
+            >
+              <History className="w-4 h-4" />
+              {t('nav.history')}
+            </Link>
 
             {user?.role === 'ADMIN' && (
               <Link
@@ -135,7 +143,7 @@ const Dashboard: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-8 py-10">
         <div className="mb-10">
-          <h1 className="text-2xl font-bold text-text-main mb-1">{t('dashboard.title')}</h1>
+          <h1 className="t-h1 text-text-main mb-1">{t('dashboard.title')}</h1>
           <p className="text-text-secondary text-sm">{t('dashboard.subtitle')}</p>
         </div>
 
