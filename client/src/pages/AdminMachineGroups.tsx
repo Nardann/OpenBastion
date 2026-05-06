@@ -125,7 +125,7 @@ const AdminMachineGroups: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-text-main truncate">{group.name}</h3>
-                    <p className="text-[10px] text-text-secondary uppercase tracking-wider">
+                    <p className="t-eyebrow">
                       {group.machines.length} machine{group.machines.length !== 1 ? 's' : ''}
                     </p>
                   </div>
@@ -254,7 +254,7 @@ const AdminMachineGroups: React.FC = () => {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-sm text-text-main">{machine.name}</p>
-                      <p className="text-[10px] text-text-secondary font-mono uppercase tracking-wider">
+                      <p className="t-eyebrow">
                         {machine.ip}:{machine.port}
                       </p>
                     </div>

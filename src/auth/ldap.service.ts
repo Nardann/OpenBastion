@@ -3,7 +3,26 @@ import { AuthProvidersService } from './auth-providers.service';
 import { UsersService } from '../users/users.service';
 import { AuthMethod } from '@prisma/client';
 import { escapeLdapFilter } from './ldap.utils';
+import { LdapProviderConfig } from './types/auth-provider.types';
 import * as LdapAuth from 'ldapauth-fork';
+
+interface LdapOptions {
+  url: string;
+  searchBase: string;
+  searchFilter: string;
+  bindProperty: string;
+  bindDN?: string;
+  bindCredentials?: string;
+  searchAttributes?: string[];
+  tlsOptions?: Record<string, unknown>;
+}
+
+interface LdapUser {
+  dn?: string;
+  mail?: string;
+  proxyAddresses?: string | string[];
+  [key: string]: unknown;
+}
 
 @Injectable()
 export class LdapService {
@@ -14,35 +33,28 @@ export class LdapService {
     private usersService: UsersService,
   ) {}
 
-  async authenticate(username: string, pass: string): Promise<any> {
+  async authenticate(username: string, pass: string): Promise<unknown> {
     const provider = await this.authProvidersService.findByType('LDAP');
     if (!provider) return null;
 
-    const config = provider.config as any;
+    const config = provider.config as LdapProviderConfig;
     const escapedUsername = escapeLdapFilter(username);
 
-    // Windows AD default: sAMAccountName, Generic LDAP: uid
     const defaultFilter = config.isActiveDirectory
       ? '(sAMAccountName={{username}})'
       : '(uid={{username}})';
 
     const searchFilter = config.searchFilter || defaultFilter;
-
-    // Replace {{username}} with escaped username to prevent LDAP injection
     let finalFilter = searchFilter.replace(/{{username}}/g, escapedUsername);
 
-    // Exclude disabled AD accounts: userAccountControl:1.2.840.113556.1.4.803:=2
-    // Bit 2 = ACCOUNT_DISABLED
     if (config.isActiveDirectory && !finalFilter.includes('userAccountControl')) {
       finalFilter = `(&${finalFilter}(!(userAccountControl:1.2.840.113556.1.4.803:=2)))`;
     }
 
-    const ldapOptions: any = {
+    const ldapOptions: LdapOptions = {
       url: config.url,
       searchBase: config.searchBase,
       searchFilter: finalFilter,
-      // ldapauth-fork does not substitute {{username}} in our pre-built filter;
-      // passing username is still needed for the second bind (user credential check).
       bindProperty: 'dn',
     };
 
@@ -51,16 +63,15 @@ export class LdapService {
       ldapOptions.bindCredentials = config.bindPassword;
     }
 
-    if (config.isActiveDirectory) {
-      ldapOptions.searchAttributes = undefined; // all attributes
+    if (config.tlsOptions) {
+      ldapOptions.tlsOptions = config.tlsOptions as Record<string, unknown>;
     }
 
     return new Promise((resolve) => {
-      const ldap = new (LdapAuth as any)(ldapOptions);
+      const ldap = new (LdapAuth as unknown as { new(opts: LdapOptions): { authenticate: (u: string, p: string, cb: (err: Error | null, user: LdapUser | null) => void) => void; close: (cb: (err?: Error) => void) => void } })(ldapOptions);
 
-      ldap.authenticate(username, pass, async (err: any, ldapUser: any) => {
-        // Always close the connection to avoid leaking LDAP sockets
-        ldap.close((closeErr: any) => {
+      ldap.authenticate(username, pass, async (err, ldapUser) => {
+        ldap.close((closeErr) => {
           if (closeErr) {
             this.logger.warn(`LDAP connection close error: ${closeErr.message}`);
           }
@@ -74,28 +85,21 @@ export class LdapService {
         if (ldapUser) {
           this.logger.log('LDAP Auth successful');
 
-          // Extract email: try 'mail' first, then 'proxyAddresses' (AD)
-          let email = ldapUser.mail;
+          let email = ldapUser.mail as string | undefined;
           if (!email && ldapUser.proxyAddresses) {
-            const smtpAddr = (Array.isArray(ldapUser.proxyAddresses)
+            const addrs = Array.isArray(ldapUser.proxyAddresses)
               ? ldapUser.proxyAddresses
-              : [ldapUser.proxyAddresses]
-            ).find((addr: string) => addr.toLowerCase().startsWith('smtp:'));
-            if (smtpAddr) {
-              email = smtpAddr.substring(5); // Remove 'smtp:' prefix
-            }
+              : [ldapUser.proxyAddresses];
+            const smtpAddr = addrs.find((addr) => addr.toLowerCase().startsWith('smtp:'));
+            if (smtpAddr) email = smtpAddr.substring(5);
           }
 
-          // Reject users without email to prevent account confusion
           if (!email) {
-            this.logger.error(
-              'LDAP User has no email attribute. Access denied.',
-            );
+            this.logger.error('LDAP User has no email attribute. Access denied.');
             return resolve(null);
           }
 
-          // JIT Provisioning
-          const externalId = ldapUser.dn || username;
+          const externalId = ldapUser.dn ?? username;
           const user = await this.usersService.findOrCreateExternalUser(
             email,
             externalId,

@@ -84,7 +84,7 @@ const Login: React.FC = () => {
   const isOidcEnabled = providers.some(p => p.type === 'OIDC' && p.enabled);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-app p-4 relative overflow-hidden transition-colors duration-300">
+    <div className="min-h-screen flex items-center justify-center bg-background-app bg-grid p-4 relative overflow-hidden transition-colors duration-300">
       <div className="absolute top-8 right-8">
         <button
           onClick={toggleTheme}
@@ -99,8 +99,8 @@ const Login: React.FC = () => {
           <div className="inline-flex p-4 rounded-2xl bg-primary/10 border border-primary/20 mb-4">
             <ShieldCheck className="w-10 h-10 text-primary" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-text-main">Open-Bastion</h1>
-          <p className="text-text-secondary font-medium uppercase tracking-[0.1em] text-[10px] mt-1">{t('login.subtitle')}</p>
+          <h1 className="t-h1 text-text-main">Open-Bastion</h1>
+          <p className="t-eyebrow mt-1">{t('login.subtitle')}</p>
         </div>
 
         <div className="bg-background-surface border border-border-light rounded-xl shadow-lg p-10">
@@ -133,7 +133,7 @@ const Login: React.FC = () => {
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">{t('login.identifier')}</label>
+                  <label className="t-eyebrow px-1">{t('login.identifier')}</label>
                   <div className="relative group">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
                       <Mail size={16} />
@@ -149,7 +149,7 @@ const Login: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">{t('login.password')}</label>
+                  <label className="t-eyebrow px-1">{t('login.password')}</label>
                   <div className="relative group">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
                       <Lock size={16} />
@@ -167,7 +167,7 @@ const Login: React.FC = () => {
               </>
             ) : (
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-widest px-1">{t('login.otpCode')}</label>
+                <label className="t-eyebrow px-1">{t('login.otpCode')}</label>
                 <div className="relative group">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
                     <ShieldCheck size={16} />
@@ -239,7 +239,7 @@ const Login: React.FC = () => {
           </form>
         </div>
 
-        <p className="text-center mt-8 text-text-secondary text-[10px] font-medium uppercase tracking-widest">
+        <p className="text-center mt-8 t-eyebrow">
           {t('login.footer')}
         </p>
       </div>

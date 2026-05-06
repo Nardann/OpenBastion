@@ -19,6 +19,7 @@ import { JwtService } from '@nestjs/jwt';
 import { OidcService } from './oidc.service';
 import { AuthProvidersService } from './auth-providers.service';
 import { TokenBlacklistService } from './token-blacklist.service';
+import { RefreshTokenService } from './refresh-token.service';
 import { AuditService, AuditCategory } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -26,6 +27,7 @@ import { LoginOtpDto, SudoDto, VerifyOtpDto } from './dto/otp.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import {
   JWT_COOKIE_MAX_AGE_MS,
+  JWT_REFRESH_COOKIE_MAX_AGE_MS,
   THROTTLE_AUTH_LIMIT,
   THROTTLE_AUTH_TTL,
 } from '../common/constants/security.constants';
@@ -45,8 +47,38 @@ export class AuthController {
     private authProvidersService: AuthProvidersService,
     private auditService: AuditService,
     private tokenBlacklistService: TokenBlacklistService,
+    private refreshTokenService: RefreshTokenService,
     private prisma: PrismaService,
   ) {}
+
+  private get cookieBase() {
+    return {
+      httpOnly: true,
+      secure: this.isProduction,
+      sameSite: 'strict' as const,
+    };
+  }
+
+  private setAuthCookies(response: Response, accessToken: string, refreshToken: string) {
+    response.cookie('jwt', accessToken, {
+      ...this.cookieBase,
+      maxAge: JWT_COOKIE_MAX_AGE_MS,
+    });
+    response.cookie('refresh_token', refreshToken, {
+      ...this.cookieBase,
+      maxAge: JWT_REFRESH_COOKIE_MAX_AGE_MS,
+      path: '/api/auth/refresh',
+    });
+  }
+
+  private setNoCacheHeaders(response: Response) {
+    response.setHeader(
+      'Cache-Control',
+      'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    );
+    response.setHeader('Pragma', 'no-cache');
+    response.setHeader('Expires', '0');
+  }
 
   @Get('providers')
   @SkipThrottle()
@@ -79,16 +111,16 @@ export class AuthController {
   @Patch('providers/:id')
   async updateProvider(@Param('id') id: string, @Body() body: any) {
     const result = await this.authProvidersService.update(id, body);
-    
+
     await this.auditService.logAction(
-      null as any, // Admin user sub will be added by interceptor if possible
+      null as any,
       'AUTH: PROVIDER_UPDATED',
       { providerId: id, type: result.type, enabled: result.enabled },
       'ADMIN' as any,
       '',
       AuditCategory.AUTH,
     );
-    
+
     return {
       ...result,
       config: this.authProvidersService.decryptConfig(result.config, result.id),
@@ -141,18 +173,15 @@ export class AuthController {
     }
 
     if (user.isOtpEnabled) {
-      // Return a temporary token for OTP step
       const tempToken = await this.jwtService.signAsync(
         { sub: user.id, isPartial: true },
         { expiresIn: '5m' },
       );
-      return {
-        requiresOtp: true,
-        tempToken,
-      };
+      return { requiresOtp: true, tempToken };
     }
 
     const { access_token } = await this.authService.login(user);
+    const refreshToken = await this.refreshTokenService.create(user.id);
 
     await this.auditService.logAction(
       user.id,
@@ -163,20 +192,8 @@ export class AuthController {
       AuditCategory.AUTH,
     );
 
-    // SECURITY FIX: Set Cache-Control headers for sensitive auth responses
-    response.setHeader(
-      'Cache-Control',
-      'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-    );
-    response.setHeader('Pragma', 'no-cache');
-    response.setHeader('Expires', '0');
-
-    response.cookie('jwt', access_token, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      maxAge: JWT_COOKIE_MAX_AGE_MS,
-    });
+    this.setNoCacheHeaders(response);
+    this.setAuthCookies(response, access_token, refreshToken);
 
     return {
       message: 'Login successful',
@@ -187,7 +204,7 @@ export class AuthController {
         role: user.role,
         authMethod: user.authMethod,
         isOtpEnabled: !!user.isOtpEnabled,
-        isAdminMode: false, // Must use /sudo to elevate
+        isAdminMode: false,
       },
     };
   }
@@ -203,17 +220,14 @@ export class AuthController {
       const payload = await this.jwtService.verifyAsync(body.tempToken);
       if (!payload.isPartial) throw new UnauthorizedException();
 
-      const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
-      });
+      const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
       if (!user) throw new UnauthorizedException();
 
       const isValid = await this.authService.verifyOtp(user.id, body.code);
-      if (!isValid) {
-        throw new BadRequestException('Code OTP invalide');
-      }
+      if (!isValid) throw new BadRequestException('Code OTP invalide');
 
       const { access_token } = await this.authService.login(user, false);
+      const refreshToken = await this.refreshTokenService.create(user.id);
 
       await this.auditService.logAction(
         user.id,
@@ -224,12 +238,7 @@ export class AuthController {
         AuditCategory.AUTH,
       );
 
-      response.cookie('jwt', access_token, {
-        httpOnly: true,
-        secure: this.isProduction,
-        sameSite: 'strict',
-        maxAge: JWT_COOKIE_MAX_AGE_MS,
-      });
+      this.setAuthCookies(response, access_token, refreshToken);
 
       return {
         message: 'Login successful',
@@ -243,9 +252,31 @@ export class AuthController {
         },
       };
     } catch (e) {
-      if (e instanceof BadRequestException) throw e;
+      if (e instanceof BadRequestException || e instanceof UnauthorizedException) throw e;
       throw new UnauthorizedException('Session OTP expirée ou invalide');
     }
+  }
+
+  @Post('refresh')
+  @Throttle({ auth: { limit: 20, ttl: 60_000 } })
+  async refresh(
+    @Req() request: any,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const token = request.cookies?.refresh_token;
+    if (!token) throw new UnauthorizedException('Refresh token manquant');
+
+    const { userId, newToken } = await this.refreshTokenService.rotate(token);
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+
+    const { access_token } = await this.authService.login(user);
+
+    this.setNoCacheHeaders(response);
+    this.setAuthCookies(response, access_token, newToken);
+
+    return { message: 'Token refreshed' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -256,22 +287,17 @@ export class AuthController {
     @Body() body: SudoDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.user.sub },
-    });
-    if (!user || user.role !== 'ADMIN') {
-      throw new UnauthorizedException('Accès refusé');
-    }
+    const user = await this.prisma.user.findUnique({ where: { id: req.user.sub } });
+    if (!user || user.role !== 'ADMIN') throw new UnauthorizedException('Accès refusé');
 
     if (user.isOtpEnabled) {
       if (!body.code) throw new BadRequestException('Code OTP requis');
       const isValid = await this.authService.verifyOtp(user.id, body.code);
-      if (!isValid) {
-        throw new BadRequestException('Code OTP invalide');
-      }
+      if (!isValid) throw new BadRequestException('Code OTP invalide');
     }
 
     const { access_token } = await this.authService.login(user, true);
+    const refreshToken = await this.refreshTokenService.create(user.id);
 
     await this.auditService.logAction(
       user.id,
@@ -282,13 +308,7 @@ export class AuthController {
       AuditCategory.AUTH,
     );
 
-    response.cookie('jwt', access_token, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      maxAge: JWT_COOKIE_MAX_AGE_MS,
-    });
-
+    this.setAuthCookies(response, access_token, refreshToken);
     return { message: 'Sudo mode activated' };
   }
 
@@ -307,25 +327,17 @@ export class AuthController {
   ) {
     await this.authService.enableOtp(req.user.sub, body.code);
 
-    // Refresh token to include isOtpEnabled: true
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.user.sub },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: req.user.sub } });
     const { access_token } = await this.authService.login(user, req.user.isAdminMode);
+    const refreshToken = await this.refreshTokenService.create(user!.id);
 
-    response.cookie('jwt', access_token, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      maxAge: JWT_COOKIE_MAX_AGE_MS,
-    });
-
+    this.setAuthCookies(response, access_token, refreshToken);
     return { message: 'OTP activé avec succès' };
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('otp/disable')
-  @Throttle({ auth: { limit: 5, ttl: 300000 } }) // LOW-08 FIX: 5 attempts per 5 minutes
+  @Throttle({ auth: { limit: 5, ttl: 300000 } })
   async disableOtp(
     @Req() req: any,
     @Body() body: VerifyOtpDto,
@@ -333,19 +345,11 @@ export class AuthController {
   ) {
     await this.authService.disableOtp(req.user.sub, body.code);
 
-    // Refresh token to include isOtpEnabled: false
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.user.sub },
-    });
+    const user = await this.prisma.user.findUnique({ where: { id: req.user.sub } });
     const { access_token } = await this.authService.login(user, req.user.isAdminMode);
+    const refreshToken = await this.refreshTokenService.create(user!.id);
 
-    response.cookie('jwt', access_token, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      maxAge: JWT_COOKIE_MAX_AGE_MS,
-    });
-
+    this.setAuthCookies(response, access_token, refreshToken);
     return { message: 'OTP désactivé avec succès' };
   }
 
@@ -354,7 +358,6 @@ export class AuthController {
   async oidcLogin(@Res() res: Response) {
     const state = crypto.randomBytes(16).toString('hex');
     const nonce = crypto.randomBytes(16).toString('hex');
-    // PKCE: generate code verifier (43–128 chars, URL-safe random)
     const codeVerifier = crypto.randomBytes(48).toString('base64url');
 
     const url = await this.oidcService.getAuthorizationUrl(state, nonce, codeVerifier);
@@ -362,7 +365,7 @@ export class AuthController {
 
     const oidcCookieOptions = {
       httpOnly: true,
-      sameSite: 'lax' as const, // 'lax' requis : 'strict' bloque le retour du callback OIDC (redirection cross-site)
+      sameSite: 'lax' as const,
       maxAge: 300000,
       secure: this.isProduction,
     };
@@ -370,7 +373,6 @@ export class AuthController {
     res.cookie('oidc_state', state, oidcCookieOptions);
     res.cookie('oidc_nonce', nonce, oidcCookieOptions);
     res.cookie('oidc_code_verifier', codeVerifier, oidcCookieOptions);
-
     res.redirect(url);
   }
 
@@ -385,16 +387,9 @@ export class AuthController {
     const savedNonce = request.cookies?.oidc_nonce;
     const savedCodeVerifier = request.cookies?.oidc_code_verifier;
 
-    if (!savedState || savedState !== state) {
-      throw new UnauthorizedException('Invalid OIDC state');
-    }
-    if (!savedCodeVerifier) {
-      throw new UnauthorizedException('Missing PKCE code verifier');
-    }
+    if (!savedState || savedState !== state) throw new UnauthorizedException('Invalid OIDC state');
+    if (!savedCodeVerifier) throw new UnauthorizedException('Missing PKCE code verifier');
 
-    // Reconstruct the full public URL of the callback request.
-    // Behind nginx, the /api/ prefix is stripped before reaching NestJS,
-    // so we must re-add it to match the redirect_uri registered in authentik.
     const protocol =
       request.get('X-Forwarded-Proto') || (this.isProduction ? 'https' : 'http');
     const host = request.get('X-Forwarded-Host') || request.get('host');
@@ -409,6 +404,7 @@ export class AuthController {
     if (!user) throw new UnauthorizedException('OIDC authentication failed');
 
     const { access_token } = await this.authService.login(user);
+    const refreshToken = await this.refreshTokenService.create(user.id);
 
     await this.auditService.logAction(
       user.id,
@@ -419,20 +415,8 @@ export class AuthController {
       AuditCategory.AUTH,
     );
 
-    // SECURITY FIX: Set Cache-Control headers for sensitive auth responses
-    response.setHeader(
-      'Cache-Control',
-      'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-    );
-    response.setHeader('Pragma', 'no-cache');
-    response.setHeader('Expires', '0');
-
-    response.cookie('jwt', access_token, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      maxAge: JWT_COOKIE_MAX_AGE_MS,
-    });
+    this.setNoCacheHeaders(response);
+    this.setAuthCookies(response, access_token, refreshToken);
     response.redirect('/');
   }
 
@@ -445,11 +429,9 @@ export class AuthController {
     const token = req.cookies?.jwt;
     const user = req.user;
 
-    if (token) {
-      await this.tokenBlacklistService.add(token);
-    }
-
+    if (token) await this.tokenBlacklistService.add(token);
     if (user) {
+      await this.refreshTokenService.revokeAllForUser(user.sub);
       await this.auditService.logAction(
         user.sub,
         'AUTH: LOGOUT',
@@ -460,14 +442,9 @@ export class AuthController {
       );
     }
 
-    // SECURITY FIX: Set Cache-Control headers for logout response
-    response.setHeader(
-      'Cache-Control',
-      'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-    );
-    response.setHeader('Pragma', 'no-cache');
-    response.setHeader('Expires', '0');
+    this.setNoCacheHeaders(response);
     response.clearCookie('jwt');
+    response.clearCookie('refresh_token', { path: '/api/auth/refresh' });
     return { message: 'Logged out and session revoked' };
   }
 
@@ -492,11 +469,7 @@ export class AuthController {
   @Post('change-password')
   async changePassword(@Req() req: any, @Body() body: ChangePasswordDto) {
     const user = req.user;
-    await this.authService.changePassword(
-      user.sub,
-      body.currentPassword,
-      body.password,
-    );
+    await this.authService.changePassword(user.sub, body.currentPassword, body.password);
 
     await this.auditService.logAction(
       user.sub,

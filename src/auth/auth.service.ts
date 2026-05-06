@@ -8,24 +8,22 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LdapService } from './ldap.service';
 import { VaultService } from '../vault/vault.service';
+import { OtpLockoutService } from './otp-lockout.service';
 import * as argon2 from 'argon2';
 import { AuthMethod } from '@prisma/client';
 import { generateSecret, keyuri, verify as totpVerify } from './totp';
 import * as qrcode from 'qrcode';
 
-const OTP_MAX_ATTEMPTS = 5;
-const OTP_LOCKOUT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly otpFailures = new Map<string, { count: number; resetAt: number }>();
 
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
     private ldapService: LdapService,
     private vault: VaultService,
+    private otpLockout: OtpLockoutService,
   ) {}
 
   async changePassword(
@@ -51,10 +49,8 @@ export class AuthService {
     pass: string,
     method: AuthMethod,
   ): Promise<any> {
-    // SECURITY FIX: Don't log the actual identifier/password
     this.logger.debug(`Validating user via ${method}`);
 
-    // VULNERABILITY 2 FIX: Remove blind fallback, enforce method
     if (method === AuthMethod.LOCAL) {
       let user = await this.usersService.findOneByEmail(identifier);
       if (!user) user = await this.usersService.findOneByUsername(identifier);
@@ -78,8 +74,6 @@ export class AuthService {
         return ldapUser;
       }
     }
-
-    // OIDC is handled via a different flow (callback)
 
     return null;
   }
@@ -114,11 +108,7 @@ export class AuthService {
   }
 
   async verifyOtp(userId: string, code: string): Promise<boolean> {
-    const now = Date.now();
-    const entry = this.otpFailures.get(userId);
-    if (entry && now < entry.resetAt && entry.count >= OTP_MAX_ATTEMPTS) {
-      throw new UnauthorizedException('Too many OTP attempts. Please wait before retrying.');
-    }
+    await this.otpLockout.assertNotLocked(userId);
 
     const user = await this.usersService.findOneById(userId);
     if (!user || !user.otpSecret) return false;
@@ -130,32 +120,23 @@ export class AuthService {
       rawSecret = user.otpSecret;
       const valid = totpVerify({ token: code, secret: rawSecret });
       if (valid) {
-        this.otpFailures.delete(userId);
+        await this.otpLockout.reset(userId);
         await this.usersService.update(userId, {
           otpSecret: this.vault.encrypt(rawSecret, `otp:${userId}`),
         });
       } else {
-        this.recordOtpFailure(userId, now);
+        await this.otpLockout.recordFailure(userId);
       }
       return valid;
     }
 
     const valid = totpVerify({ token: code, secret: rawSecret });
     if (valid) {
-      this.otpFailures.delete(userId);
+      await this.otpLockout.reset(userId);
     } else {
-      this.recordOtpFailure(userId, now);
+      await this.otpLockout.recordFailure(userId);
     }
     return valid;
-  }
-
-  private recordOtpFailure(userId: string, now: number): void {
-    const entry = this.otpFailures.get(userId);
-    if (entry && now < entry.resetAt) {
-      entry.count++;
-    } else {
-      this.otpFailures.set(userId, { count: 1, resetAt: now + OTP_LOCKOUT_WINDOW_MS });
-    }
   }
 
   async enableOtp(userId: string, code: string) {
@@ -196,7 +177,6 @@ export class AuthService {
   async updateUserPassword(userId: string, newPassword: string): Promise<any> {
     const passwordHash = await argon2.hash(newPassword);
 
-    // Update password and clear the requiresPasswordChange flag
     return await this.usersService.update(userId, {
       passwordHash,
       requiresPasswordChange: false,

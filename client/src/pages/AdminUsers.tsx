@@ -194,7 +194,7 @@ const AdminUsers: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-bold text-text-main leading-tight tracking-tight">{t('adminUsers.title')}</h1>
+          <h1 className="t-h1 text-text-main">{t('adminUsers.title')}</h1>
           <p className="text-text-secondary mt-1 text-sm">{t('adminUsers.subtitle')}</p>
         </div>
       </div>
@@ -341,7 +341,7 @@ const AdminUsers: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-text-main truncate leading-none">{group.name}</h3>
-                        <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold opacity-60">
+                        <p className="t-eyebrow mt-2 opacity-60">
                           {group._count.users} {group._count.users !== 1 ? t('adminUsers.memberPlural') : t('adminUsers.memberSingular')}
                         </p>
                       </div>
@@ -408,7 +408,7 @@ const AdminUsers: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-text-main leading-none">{editingId ? t('adminUsers.modal.editTitle') : t('adminUsers.modal.newTitle')}</h2>
-                  <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold">{t('adminUsers.modal.subtitle')}</p>
+                  <p className="t-eyebrow mt-2">{t('adminUsers.modal.subtitle')}</p>
                 </div>
               </div>
               <button onClick={() => setIsUserModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={24} /></button>
@@ -416,7 +416,7 @@ const AdminUsers: React.FC = () => {
 
             <form onSubmit={handleCreateUser} className="space-y-6">
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.email')}</label>
+                <label className="t-eyebrow ml-1">{t('adminUsers.modal.email')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <Mail size={16} />
@@ -426,7 +426,7 @@ const AdminUsers: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.username')}</label>
+                <label className="t-eyebrow ml-1">{t('adminUsers.modal.username')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <UserIcon size={16} />
@@ -436,7 +436,7 @@ const AdminUsers: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{editingId ? t('adminUsers.modal.passwordEdit') : t('adminUsers.modal.passwordNew')}</label>
+                <label className="t-eyebrow ml-1">{editingId ? t('adminUsers.modal.passwordEdit') : t('adminUsers.modal.passwordNew')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <Lock size={16} />
@@ -446,7 +446,7 @@ const AdminUsers: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.roleLabel')}</label>
+                <label className="t-eyebrow ml-1">{t('adminUsers.modal.roleLabel')}</label>
                 <select className="form-input h-11 text-sm font-medium" value={userFormData.role} onChange={e => setUserFormData({...userFormData, role: e.target.value})}>
                   <option value="USER">{t('adminUsers.modal.roleUser')}</option>
                   <option value="ADMIN">{t('adminUsers.modal.roleAdmin')}</option>
@@ -476,7 +476,7 @@ const AdminUsers: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-xl font-bold text-text-main leading-none">{editingId ? t('adminUsers.modal.groupEditTitle') : t('adminUsers.addGroup')}</h2>
-                    <p className="text-[10px] text-text-secondary uppercase tracking-widest mt-2 font-bold">{t('adminUsers.modal.groupSubtitle')}</p>
+                    <p className="t-eyebrow mt-2">{t('adminUsers.modal.groupSubtitle')}</p>
                   </div>
                 </div>
                 {!editingId && <button onClick={() => setIsGroupModalOpen(false)} className="p-2 hover:bg-background-app rounded-full text-text-secondary transition-colors"><X size={24} /></button>}
@@ -484,7 +484,7 @@ const AdminUsers: React.FC = () => {
 
               <form onSubmit={handleCreateGroup} className="space-y-6">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.groupName')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminUsers.modal.groupName')}</label>
                   <div className="relative group">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                       <Users2 size={16} />
@@ -493,7 +493,7 @@ const AdminUsers: React.FC = () => {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-text-secondary ml-1">{t('adminUsers.modal.groupDescription')}</label>
+                  <label className="t-eyebrow ml-1">{t('adminUsers.modal.groupDescription')}</label>
                   <div className="relative group">
                     <div className="absolute left-3.5 top-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                       <FileText size={16} />

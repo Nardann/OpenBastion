@@ -1,25 +1,44 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AuthProvidersService } from './auth-providers.service';
 import { UsersService } from '../users/users.service';
-import { AuthMethod } from '@prisma/client';
+import { AuthMethod, User } from '@prisma/client';
+import { OidcProviderConfig } from './types/auth-provider.types';
 import * as https from 'node:https';
+
+interface OidcUserInfo {
+  sub: string;
+  email?: string;
+  name?: string;
+  [key: string]: unknown;
+}
+
+interface OidcTokenSet {
+  access_token: string;
+  claims: () => { sub?: string } | null;
+}
+
+interface ConfigCacheEntry {
+  serverMetadata: unknown;
+  config: OidcProviderConfig;
+  cachedAt: number;
+}
+
+// openid-client v6 is ESM-only; we use unknown + casts to avoid any types
+type OidcLib = Record<string, unknown>;
 
 @Injectable()
 export class OidcService {
   private readonly logger = new Logger(OidcService.name);
-  private configCache: Map<
-    string,
-    { serverMetadata: any; config: any; cachedAt: number }
-  > = new Map();
-  private readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+  private configCache = new Map<string, ConfigCacheEntry>();
+  private readonly CACHE_TTL_MS = 5 * 60 * 1000;
 
   constructor(
     private authProvidersService: AuthProvidersService,
     private usersService: UsersService,
   ) {}
 
-  private async getOpenidClient(): Promise<any> {
-    const lib: any = await import('openid-client');
+  private async getOpenidClient(): Promise<OidcLib> {
+    const lib = await import('openid-client') as unknown as OidcLib;
     return lib;
   }
 
@@ -32,23 +51,16 @@ export class OidcService {
     }
   }
 
-  /**
-   * Builds a custom fetch function that bypasses TLS verification.
-   * Uses node:https under the hood — zero extra npm dependencies.
-   * Only called in non-production environments with internal issuers.
-   */
   private buildInsecureFetch(): typeof fetch {
     const agent = new https.Agent({ rejectUnauthorized: false });
 
     return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = input instanceof URL ? input.toString() : input.toString();
+      const url = input instanceof URL ? input.toString() : String(input);
 
-      // For http URLs, fall through to globalThis.fetch normally
       if (!url.startsWith('https://')) {
         return globalThis.fetch(input, init);
       }
 
-      // Use node:https.request to bypass TLS verification
       return new Promise<Response>((resolve, reject) => {
         const parsed = new URL(url);
         const options: https.RequestOptions = {
@@ -56,20 +68,20 @@ export class OidcService {
           port: parsed.port || 443,
           path: parsed.pathname + parsed.search,
           method: (init?.method as string) || 'GET',
-          headers: init?.headers as any,
+          headers: init?.headers as Record<string, string>,
           agent,
         };
 
         const req = https.request(options, (res) => {
           const chunks: Buffer[] = [];
-          res.on('data', (chunk) => chunks.push(chunk));
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
           res.on('end', () => {
             const body = Buffer.concat(chunks);
             resolve(
               new Response(body, {
                 status: res.statusCode ?? 200,
                 statusText: res.statusMessage ?? '',
-                headers: res.headers as any,
+                headers: res.headers as Record<string, string>,
               }),
             );
           });
@@ -78,7 +90,6 @@ export class OidcService {
         req.on('error', reject);
 
         if (init?.body) {
-          // Normalize body to string — openid-client passes URLSearchParams for token requests
           let bodyData: string | Buffer;
           if (init.body instanceof URLSearchParams) {
             bodyData = init.body.toString();
@@ -96,7 +107,7 @@ export class OidcService {
     };
   }
 
-  async getServerMetadata(): Promise<any | null> {
+  async getServerMetadata(): Promise<unknown | null> {
     const provider = await this.authProvidersService.findByType('OIDC');
     if (!provider) {
       this.logger.warn('OIDC Provider not found or disabled');
@@ -108,8 +119,8 @@ export class OidcService {
       return cached.serverMetadata;
     }
 
-    const config = provider.config as any;
-    const issuerUrl = config.issuer || config.issuerUrl;
+    const config = provider.config as OidcProviderConfig;
+    const issuerUrl = config.issuer;
 
     if (!issuerUrl) {
       this.logger.error('OIDC config missing issuer URL');
@@ -118,87 +129,61 @@ export class OidcService {
 
     try {
       this.logger.log(`Discovering OIDC server at: ${issuerUrl}`);
-      this.logger.debug(
-        `OIDC config: clientId=${config.clientId}, callbackUrl=${config.callbackUrl}`,
-      );
+      this.logger.debug(`OIDC config: clientId=${config.clientId}, redirectUri=${config.redirectUri}`);
 
       const oidc = await this.getOpenidClient();
+      const discovery = oidc['discovery'] as (issuer: URL, clientId: string, clientSecret: string, ...args: unknown[]) => Promise<unknown>;
       const isInternal = this.isInternalIssuer(issuerUrl);
       const isDevEnv = process.env.NODE_ENV !== 'production';
       const useInsecure = isInternal && isDevEnv;
 
-      let serverMetadata: any;
-
+      let serverMetadata: unknown;
       if (useInsecure) {
-        this.logger.warn(
-          'Using insecure TLS fetch for internal OIDC issuer — dev only',
-        );
+        this.logger.warn('Using insecure TLS fetch for internal OIDC issuer — dev only');
         const insecureFetch = this.buildInsecureFetch();
-        // openid-client v6 / oauth4webapi: pass [customFetch] symbol in options
-        const customFetchSym = oidc.customFetch ?? Symbol.for('customFetch');
-        serverMetadata = await oidc.discovery(
-          new URL(issuerUrl),
-          config.clientId,
-          config.clientSecret,
-          undefined,
-          { [customFetchSym]: insecureFetch },
-        );
+        const customFetchSym = (oidc['customFetch'] as symbol) ?? Symbol.for('customFetch');
+        serverMetadata = await discovery(new URL(issuerUrl), config.clientId, config.clientSecret, undefined, { [customFetchSym]: insecureFetch });
       } else {
-        serverMetadata = await oidc.discovery(
-          new URL(issuerUrl),
-          config.clientId,
-          config.clientSecret,
-        );
+        serverMetadata = await discovery(new URL(issuerUrl), config.clientId, config.clientSecret);
       }
 
-      this.configCache.set(provider.id, {
-        serverMetadata,
-        config,
-        cachedAt: Date.now(),
-      });
+      this.configCache.set(provider.id, { serverMetadata, config, cachedAt: Date.now() });
       this.logger.log('OIDC discovery successful');
       return serverMetadata;
-    } catch (error: any) {
-      this.logger.error(
-        `OIDC discovery failed for ${issuerUrl}: ${error?.message || error}`,
-      );
-      if (error?.cause) {
-        this.logger.debug(`Error cause: ${error.cause}`);
-      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`OIDC discovery failed for ${issuerUrl}: ${msg}`);
       return null;
     }
   }
 
-  async getAuthorizationUrl(
-    state: string,
-    nonce: string,
-    codeVerifier: string,
-  ): Promise<string | null> {
+  async getAuthorizationUrl(state: string, nonce: string, codeVerifier: string): Promise<string | null> {
     const serverMetadata = await this.getServerMetadata();
     if (!serverMetadata) return null;
 
     const provider = await this.authProvidersService.findByType('OIDC');
-    const config = provider!.config as any;
+    const config = provider!.config as OidcProviderConfig;
 
     try {
       const oidc = await this.getOpenidClient();
-      const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
+      const calcChallenge = oidc['calculatePKCECodeChallenge'] as (v: string) => Promise<string>;
+      const buildUrl = oidc['buildAuthorizationUrl'] as (meta: unknown, params: Record<string, string>) => URL;
 
-      const authorizationUrl = oidc.buildAuthorizationUrl(serverMetadata, {
+      const codeChallenge = await calcChallenge(codeVerifier);
+      const authorizationUrl = buildUrl(serverMetadata, {
         scope: 'openid email profile',
         state,
         nonce,
-        redirect_uri: config.callbackUrl,
+        redirect_uri: config.redirectUri,
         code_challenge_method: 'S256',
         code_challenge: codeChallenge,
       });
 
-      this.logger.log(`OIDC Authorization URL generated with PKCE`);
+      this.logger.log('OIDC Authorization URL generated with PKCE');
       return authorizationUrl.href;
-    } catch (error: any) {
-      this.logger.error(
-        `Failed to generate OIDC authorization URL: ${error.message}`,
-      );
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to generate OIDC authorization URL: ${msg}`);
       return null;
     }
   }
@@ -208,105 +193,49 @@ export class OidcService {
     savedState: string,
     savedNonce: string,
     codeVerifier: string,
-  ): Promise<any> {
+  ): Promise<User | null> {
     try {
       this.logger.log('Validating OIDC callback...');
 
       const serverMetadata = await this.getServerMetadata();
-      if (!serverMetadata) {
-        throw new Error('Could not load OIDC server metadata');
-      }
+      if (!serverMetadata) throw new Error('Could not load OIDC server metadata');
 
       const oidc = await this.getOpenidClient();
-      const currentUrl = new URL(fullUrl);
+      const authCodeGrant = oidc['authorizationCodeGrant'] as (meta: unknown, url: URL, opts: Record<string, unknown>, ...rest: unknown[]) => Promise<OidcTokenSet>;
+      const fetchUserInfo = oidc['fetchUserInfo'] as (meta: unknown, token: string, sub: string, ...rest: unknown[]) => Promise<OidcUserInfo>;
+      const customFetchSym = (oidc['customFetch'] as symbol) ?? Symbol.for('customFetch');
 
       const provider = await this.authProvidersService.findByType('OIDC');
-      const config = provider!.config as any;
-      const issuerUrl = config.issuer || config.issuerUrl;
-      const isInternal = this.isInternalIssuer(issuerUrl);
-      const isDevEnv = process.env.NODE_ENV !== 'production';
-      const useInsecure = isInternal && isDevEnv;
+      const config = provider!.config as OidcProviderConfig;
+      const issuerUrl = config.issuer;
+      const useInsecure = this.isInternalIssuer(issuerUrl) && process.env.NODE_ENV !== 'production';
 
-      // openid-client v6: authorizationCodeGrant validates state, nonce, id_token and PKCE
-      let tokens: any;
+      const grantOpts: Record<string, unknown> = {
+        pkceCodeVerifier: codeVerifier,
+        expectedState: savedState,
+        expectedNonce: savedNonce,
+      };
+
+      let tokens: OidcTokenSet;
+      let userinfo: OidcUserInfo;
+
       if (useInsecure) {
         const insecureFetch = this.buildInsecureFetch();
-        const customFetchSym = oidc.customFetch ?? Symbol.for('customFetch');
-        tokens = await oidc.authorizationCodeGrant(
-          serverMetadata,
-          currentUrl,
-          {
-            pkceCodeVerifier: codeVerifier,
-            expectedState: savedState,
-            expectedNonce: savedNonce,
-          },
-          undefined,
-          { [customFetchSym]: insecureFetch },
-        );
+        tokens = await authCodeGrant(serverMetadata, new URL(fullUrl), grantOpts, undefined, { [customFetchSym]: insecureFetch });
+        userinfo = await fetchUserInfo(serverMetadata, tokens.access_token, tokens.claims()?.sub ?? '', { [customFetchSym]: insecureFetch });
       } else {
-        tokens = await oidc.authorizationCodeGrant(
-          serverMetadata,
-          currentUrl,
-          {
-            pkceCodeVerifier: codeVerifier,
-            expectedState: savedState,
-            expectedNonce: savedNonce,
-          },
-        );
+        tokens = await authCodeGrant(serverMetadata, new URL(fullUrl), grantOpts);
+        userinfo = await fetchUserInfo(serverMetadata, tokens.access_token, tokens.claims()?.sub ?? '');
       }
 
-      this.logger.log('Tokens received, fetching user info...');
-
-      // openid-client v6: fetchUserInfo
-      let userinfo: any;
-      if (useInsecure) {
-        const insecureFetch = this.buildInsecureFetch();
-        const customFetchSym = oidc.customFetch ?? Symbol.for('customFetch');
-        userinfo = await oidc.fetchUserInfo(
-          serverMetadata,
-          tokens.access_token,
-          tokens.claims()?.sub as string,
-          { [customFetchSym]: insecureFetch },
-        );
-      } else {
-        userinfo = await oidc.fetchUserInfo(
-          serverMetadata,
-          tokens.access_token,
-          tokens.claims()?.sub as string,
-        );
-      }
-
-      if (!userinfo.email) {
-        this.logger.error('OIDC user has no email claim');
-        return null;
-      }
-
-      if (!userinfo.sub) {
-        this.logger.error('OIDC user has no sub claim');
-        return null;
-      }
+      if (!userinfo.email) { this.logger.error('OIDC user has no email claim'); return null; }
+      if (!userinfo.sub) { this.logger.error('OIDC user has no sub claim'); return null; }
 
       this.logger.log(`OIDC login successful for ${userinfo.email}`);
-
-      // JIT Provisioning
-      const user = await this.usersService.findOrCreateExternalUser(
-        userinfo.email as string,
-        userinfo.sub as string,
-        AuthMethod.OIDC,
-      );
-      return user;
-    } catch (error: any) {
-      this.logger.error(
-        `OIDC callback validation failed: ${error?.message || error}`,
-      );
-      if (error?.response) {
-        try {
-          const body = await error.response.text();
-          this.logger.error(`OIDC Provider Error Body: ${body}`);
-        } catch {
-          this.logger.error('Could not read OIDC error body');
-        }
-      }
+      return this.usersService.findOrCreateExternalUser(userinfo.email, userinfo.sub, AuthMethod.OIDC);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.error(`OIDC callback validation failed: ${msg}`);
       return null;
     }
   }

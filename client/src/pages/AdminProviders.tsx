@@ -121,7 +121,7 @@ const AdminProviders: React.FC = () => {
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-text-main">{t('adminProviders.title')}</h1>
+          <h1 className="t-h1 text-text-main">{t('adminProviders.title')}</h1>
           <p className="text-text-secondary mt-1">{t('adminProviders.subtitle')}</p>
         </div>
       </div>

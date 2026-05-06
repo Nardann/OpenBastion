@@ -1,39 +1,71 @@
 @import "tailwindcss";
 
+/* ============================================================
+   OpenBastion Design System — production tokens
+   Navy primary + Ambre accent. Replaces legacy indigo (#4F46E5).
+   Drop-in replacement for client/src/index.css.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
+
 @theme {
-  --color-primary: #4F46E5;
-  --color-primary-hover: #4338CA;
-  
-  --color-background-app: var(--bg-app);
+  /* === Brand === */
+  --color-primary:        #0E2E5C;
+  --color-primary-hover:  #0A2349;
+  --color-primary-press:  #061830;
+  --color-primary-soft:   rgba(14, 46, 92, 0.08);
+  --color-primary-ring:   rgba(14, 46, 92, 0.25);
+
+  --color-accent:         #F5A524;
+  --color-accent-soft:    rgba(245, 165, 36, 0.14);
+  --color-accent-fg:      #9A6300;
+
+  /* === Semantic surfaces (legacy names preserved) === */
+  --color-background-app:     var(--bg-app);
   --color-background-surface: var(--bg-surface);
-  --color-text-main: var(--text-main);
-  --color-text-secondary: var(--text-secondary);
-  --color-border-light: var(--border-light);
-  --color-table-header: var(--table-header);
-  
+  --color-text-main:          var(--text-main);
+  --color-text-secondary:     var(--text-secondary);
+  --color-border-light:       var(--border-light);
+  --color-table-header:       var(--table-header);
+
+  /* === States === */
   --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-danger: #EF4444;
+  --color-warning: #F5A524;
+  --color-danger:  #EF4444;
   --color-neutral: #9CA3AF;
+
+  /* === Typography === */
+  --font-sans:    "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
 }
 
+/* ============================================================
+   LIGHT THEME
+   ============================================================ */
 :root {
-  --bg-app: #F9FAFB;
-  --bg-surface: #FFFFFF;
-  --text-main: #111827;
-  --text-secondary: #6B7280;
-  --border-light: #E5E7EB;
-  --table-header: #F3F4F6;
+  --bg-app:         #FAFBFD;
+  --bg-surface:     #FFFFFF;
+  --bg-surface-2:   #F4F6FB;
+  --text-main:      #060916;
+  --text-secondary: #4F576E;
+  --text-tertiary:  #6F7790;
+  --border-light:   #E6EAF2;
+  --border-strong:  #CCD3E1;
+  --table-header:   #F4F6FB;
   color-scheme: light;
 }
 
 .dark {
-  --bg-app: #0F172A;
-  --bg-surface: #1E293B;
-  --text-main: #F8FAFC;
-  --text-secondary: #94A3B8;
-  --border-light: #334155;
-  --table-header: #1E293B;
+  --bg-app:         #060916;
+  --bg-surface:     #131727;
+  --bg-surface-2:   #0C101D;
+  --text-main:      #F2F4F8;
+  --text-secondary: #9AA1B8;
+  --text-tertiary:  #686F87;
+  --border-light:   rgba(255, 255, 255, 0.08);
+  --border-strong:  rgba(255, 255, 255, 0.18);
+  --table-header:   #0C101D;
   color-scheme: dark;
 }
 
@@ -41,59 +73,45 @@ body {
   background-color: var(--bg-app);
   color: var(--text-main);
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color 0.2s, color 0.2s;
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg-app); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
 
-::-webkit-scrollbar-track {
-  background: var(--bg-app);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-light);
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
-}
-
-/* Base UI Components */
+/* ============================================================
+   COMPONENTS — preserved from legacy, retuned for navy
+   ============================================================ */
 .card-subtle {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
   border-radius: 8px;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-  transition: background-color 0.2s, border-color 0.2s;
+  box-shadow: 0 1px 2px rgba(6, 9, 22, 0.06), 0 1px 0 rgba(6, 9, 22, 0.02);
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
 }
 
 .btn-primary {
-  background-color: #4F46E5;
+  background-color: var(--color-primary);
   color: #FFFFFF !important;
   padding: 8px 16px;
   border-radius: 6px;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   border: none;
+  box-shadow: 0 8px 24px -8px rgba(14, 46, 92, 0.35);
 }
-
-.btn-primary:hover {
-  background-color: #4338CA;
-  transform: translateY(-1px);
-}
-
-.btn-primary:active {
-  transform: translateY(0);
-}
+.btn-primary:hover  { background-color: var(--color-primary-hover); transform: translateY(-1px); }
+.btn-primary:active { background-color: var(--color-primary-press); transform: translateY(0); }
+.btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-primary-ring); }
 
 .btn-secondary {
   background-color: var(--bg-surface);
@@ -105,11 +123,20 @@ body {
   transition: all 0.2s;
   cursor: pointer;
 }
+.btn-secondary:hover { background-color: var(--table-header); border-color: var(--border-strong); }
 
-.btn-secondary:hover {
-  background-color: var(--table-header);
-  border-color: var(--text-secondary);
+/* === Accent button (rare — sparingly) === */
+.btn-accent {
+  background-color: var(--color-accent);
+  color: #1F1100;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
 }
+.btn-accent:hover { background-color: #D88A0E; }
 
 .form-input {
   background-color: var(--bg-surface);
@@ -121,21 +148,16 @@ body {
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
   width: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
 }
-
-/* Fix for inputs with left icons */
-.input-with-icon {
-  padding-left: 40px !important;
-}
-
+.input-with-icon { padding-left: 40px !important; }
 .form-input:focus {
-  border-color: #4F46E5;
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-ring);
 }
 
-.pill-badge {
-  @apply rounded-full font-bold uppercase;
-}
+.pill-badge { @apply rounded-full font-bold uppercase; }
 
 .table-header {
   background-color: var(--table-header);
@@ -143,11 +165,56 @@ body {
   @apply text-[10px] uppercase tracking-wider font-bold;
 }
 
-/* Force dark for terminal elements */
 .terminal-theme {
   --bg-app: #000000;
   --bg-surface: #111111;
   --text-main: #FFFFFF;
   --text-secondary: #AAAAAA;
   --border-light: #333333;
+}
+
+/* ============================================================
+   NEW — Semantic typography classes
+   Adopt incrementally. These replace ad-hoc Tailwind text-* combos.
+   ============================================================ */
+.t-display  { font-family: var(--font-display); font-weight: 600; font-size: 48px; line-height: 56px; letter-spacing: -0.02em; }
+.t-h1       { font-family: var(--font-display); font-weight: 600; font-size: 24px; line-height: 32px; letter-spacing: -0.02em; }
+.t-h2       { font-family: var(--font-sans);    font-weight: 600; font-size: 18px; line-height: 26px; letter-spacing: -0.01em; }
+.t-h3       { font-family: var(--font-sans);    font-weight: 600; font-size: 16px; line-height: 24px; }
+.t-body     { font-family: var(--font-sans);    font-weight: 400; font-size: 14px; line-height: 20px; }
+.t-secondary{ font-family: var(--font-sans);    font-weight: 400; font-size: 14px; line-height: 20px; color: var(--text-secondary); }
+
+/* Signature micro-label — bold UPPERCASE 10px, widely tracked.
+   Use everywhere a small caption/eyebrow is wanted. */
+.t-eyebrow {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.t-mono { font-family: var(--font-mono); font-size: 12px; line-height: 16px; }
+.t-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+/* === Optional: ambient grid background for auth / dashboard hero === */
+.bg-grid {
+  background-image:
+    linear-gradient(var(--border-light) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-light) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+
+.bg-primary-halo {
+  background: radial-gradient(circle at 50% 40%, var(--color-primary-soft) 0%, transparent 60%);
 }

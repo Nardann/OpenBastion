@@ -160,7 +160,7 @@ const Profile: React.FC = () => {
     <div className="max-w-4xl mx-auto p-8 space-y-8 animate-in fade-in duration-500 text-sans">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-text-main">
+          <h1 className="t-h1 text-text-main">
             {t('profile.title')}
           </h1>
           <p className="text-text-secondary mt-1 text-sm uppercase tracking-widest font-medium">
@@ -183,7 +183,7 @@ const Profile: React.FC = () => {
               <UserCircle size={48} />
             </div>
             <h2 className="font-bold text-lg text-text-main break-all">{user?.email}</h2>
-            <div className="mt-2 flex items-center gap-1.5 px-3 py-1 bg-background-app rounded-full text-[10px] font-bold uppercase text-text-secondary">
+            <div className="mt-2 flex items-center gap-1.5 px-3 py-1 bg-background-app rounded-full t-eyebrow">
               <Shield size={12} /> {user?.role}
             </div>
           </div>

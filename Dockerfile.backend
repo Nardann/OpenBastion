@@ -19,6 +19,9 @@ WORKDIR /app
 # Create non-root user for security first
 RUN addgroup -g 1001 -S nodejs && adduser -S nestjs -u 1001
 
+# Create recordings directory with correct ownership
+RUN mkdir -p /var/lib/bastion/recordings && chown -R nestjs:nodejs /var/lib/bastion
+
 # Copy files with correct ownership from the start
 COPY --from=build --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=build --chown=nestjs:nodejs /app/node_modules ./node_modules
