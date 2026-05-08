@@ -14,7 +14,11 @@ echo "Generating Prisma client..."
 npx prisma generate
 
 echo "Applying schema migrations..."
-npx prisma db push --accept-data-loss --skip-generate
+# prisma migrate deploy is idempotent and safe:
+# - Fresh DB  : creates _prisma_migrations, applies 0001_init (IF NOT EXISTS SQL → no-op on existing tables)
+# - Existing DB (upgraded from db push): same — IF NOT EXISTS means no data loss ever
+# - Subsequent restarts: 0001_init already recorded → skipped; only new migrations are applied
+npx prisma migrate deploy
 
 echo "Starting NestJS application..."
 exec su -s /bin/sh nestjs -c "npm run start:prod"
