@@ -73,6 +73,11 @@ export class SessionRecorderService {
     });
   }
 
+  /** Returns the set of sessionIds currently being recorded (not yet ended). */
+  getActiveSessionIds(): Set<string> {
+    return new Set(this.active.keys());
+  }
+
   writeOutput(sessionId: string, data: string): void {
     const rec = this.active.get(sessionId);
     if (!rec) return;

@@ -124,6 +124,7 @@ body {
   cursor: pointer;
 }
 .btn-secondary:hover { background-color: var(--table-header); border-color: var(--border-strong); }
+.btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--color-primary-ring); }
 
 /* === Accent button (rare — sparingly) === */
 .btn-accent {
@@ -315,7 +316,7 @@ body {
 }
 .card-lift:hover {
   transform: translateY(-2px);
-  border-color: rgba(14, 46, 92, 0.35);
+  border-color: var(--border-strong);
   box-shadow: 0 12px 28px -16px rgba(6, 9, 22, 0.18), 0 2px 4px rgba(6, 9, 22, 0.04);
 }
 
@@ -340,4 +341,34 @@ body {
   letter-spacing: 0.28em;
   text-transform: uppercase;
   color: var(--color-accent-fg);
+}
+
+/* ============================================================
+   REDUCED MOTION — respect user OS preference
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .fade-up,
+  .fade-up-1,
+  .fade-up-2,
+  .fade-up-3,
+  .fade-up-4 {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .card-lift {
+    transition: none;
+  }
+  .card-lift:hover {
+    transform: none;
+  }
+
+  .dot-live::before {
+    animation: none;
+  }
+
+  .rail-ambre::before {
+    transition: none;
+  }
 }

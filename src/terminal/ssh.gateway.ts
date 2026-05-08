@@ -240,6 +240,8 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         privateKey: secret.privateKey,
         allowTunneling: machine.allowTunneling,
         allowRebound: machine.allowRebound,
+        cols: data.cols ?? 80,
+        rows: data.rows ?? 24,
       });
 
       const sessionId = crypto.randomUUID();
@@ -383,8 +385,8 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const session = this.sshSessions.get(client.id);
     const user = client.data.user;
 
+    // Resize can arrive before start-session is fully processed — silently ignore.
     if (!session || !user) {
-      client.emit('error', 'Session not found');
       return;
     }
 

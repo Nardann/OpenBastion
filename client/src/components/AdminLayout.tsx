@@ -62,7 +62,7 @@ const AdminLayout: React.FC = () => {
           <h2 className="font-bold text-lg text-text-main tracking-tight">{t('adminLayout.brand')}</h2>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1" aria-label={t('adminLayout.brand')}>
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -71,8 +71,8 @@ const AdminLayout: React.FC = () => {
               className={({ isActive }) => `
                 flex items-center gap-3 px-3 py-2.5 rounded-md transition-colors duration-200
                 ${isActive
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'text-text-secondary hover:bg-background-app hover:text-text-main'}
+                  ? 'bg-primary/10 text-primary font-semibold border-l-2 border-primary pl-[10px]'
+                  : 'text-text-secondary hover:bg-background-app hover:text-text-main border-l-2 border-transparent pl-[10px]'}
               `}
             >
               {item.icon}
@@ -103,8 +103,8 @@ const AdminLayout: React.FC = () => {
           <div className="flex items-center gap-6">
             <button
               onClick={cycleLang}
-              className="p-2 text-text-secondary hover:text-primary transition-colors flex items-center gap-1 text-xs font-bold"
-              title={lang.toUpperCase()}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center gap-1 text-text-secondary hover:text-primary transition-colors text-xs font-bold"
+              aria-label={`${t('common.language')}: ${lang.toUpperCase()}`}
             >
               <Globe size={18} />
               <span className="hidden sm:inline">{lang.toUpperCase()}</span>
@@ -112,17 +112,18 @@ const AdminLayout: React.FC = () => {
 
             <button
               onClick={toggleTheme}
-              className="p-2 text-text-secondary hover:text-primary transition-colors"
-              title={theme === 'light' ? t('common.darkMode') : t('common.lightMode')}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-text-secondary hover:text-primary transition-colors"
+              aria-label={theme === 'light' ? t('common.darkMode') : t('common.lightMode')}
             >
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
 
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral w-4 h-4" aria-hidden="true" />
               <input
                 type="text"
                 placeholder={t('adminLayout.globalSearch')}
+                aria-label={t('adminLayout.globalSearch')}
                 className="form-input input-with-icon h-9 text-xs w-64 shadow-sm"
               />
             </div>
