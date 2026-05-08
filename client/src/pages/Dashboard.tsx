@@ -90,15 +90,15 @@ const Dashboard: React.FC = () => {
           <div className="flex items-center gap-4">
             <button
               onClick={cycleLang}
-              className="p-2 text-text-secondary hover:text-primary transition-colors"
-              title={lang.toUpperCase()}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-text-secondary hover:text-primary transition-colors"
+              aria-label={`${t('common.language')}: ${lang.toUpperCase()}`}
             >
               <Globe size={18} />
             </button>
             <button
               onClick={toggleTheme}
-              className="p-2 text-text-secondary hover:text-primary transition-colors mr-2"
-              title={theme === 'light' ? t('common.darkMode') : t('common.lightMode')}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-text-secondary hover:text-primary transition-colors mr-2"
+              aria-label={theme === 'light' ? t('common.darkMode') : t('common.lightMode')}
             >
               {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             </button>
@@ -132,8 +132,8 @@ const Dashboard: React.FC = () => {
 
             <button
               onClick={logout}
-              className="p-2 text-text-secondary hover:text-danger rounded-md transition-colors"
-              title={t('nav.logout')}
+              className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-text-secondary hover:text-danger rounded-md transition-colors"
+              aria-label={t('nav.logout')}
             >
               <LogOut size={20} />
             </button>
@@ -172,7 +172,7 @@ const Dashboard: React.FC = () => {
             {selectedGroups.length > 0 && (
               <button
                 onClick={() => setSelectedGroups([])}
-                className="mt-4 flex items-center gap-2 text-[10px] font-bold text-primary uppercase hover:opacity-75 transition-opacity"
+                className="mt-4 flex items-center gap-2 text-xs font-bold text-primary uppercase hover:opacity-75 transition-opacity"
               >
                 <X size={14} />
                 {t('dashboard.resetFilters')}
@@ -222,6 +222,7 @@ const Dashboard: React.FC = () => {
 
                 <Link
                   to={machine.protocol === 'RDP' ? `/rdp/${machine.id}` : `/session/${machine.id}`}
+                  state={machine.protocol !== 'RDP' ? { machineName: machine.name } : undefined}
                   className="btn-primary flex items-center justify-center gap-2 w-full text-sm"
                 >
                   {machine.protocol === 'RDP' ? (

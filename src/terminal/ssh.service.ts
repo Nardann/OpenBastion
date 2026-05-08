@@ -52,7 +52,11 @@ export class SshService {
         .on('ready', () => {
           this.logger.log(`SSH connection ready for ${params.host}`);
 
-          const shellOptions: any = { term: 'xterm-256color' };
+          const shellOptions: any = {
+            term: 'xterm-256color',
+            cols: params.cols ?? 80,
+            rows: params.rows ?? 24,
+          };
           if (params.allowRebound === true && process.env['SSH_AUTH_SOCK']) {
             shellOptions.agentForward = true;
           }

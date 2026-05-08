@@ -11,7 +11,9 @@ import { AuditModule } from '../audit/audit.module';
 import { SshModule } from './ssh.module';
 import { SessionRecorderService } from './recording/session-recorder.service';
 import { RecordingController } from './recording/recording.controller';
+import { RecordingCleanupService } from './recording/recording-cleanup.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
   imports: [
@@ -23,8 +25,9 @@ import { PrismaModule } from '../prisma/prisma.module';
     AuditModule,
     SshModule,
     PrismaModule,
+    SettingsModule,
   ],
-  providers: [SshGateway, RdpGateway, RdpService, SessionRecorderService],
+  providers: [SshGateway, RdpGateway, RdpService, SessionRecorderService, RecordingCleanupService],
   controllers: [RecordingController],
 })
 export class TerminalModule {}

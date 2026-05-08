@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Patch,
   Param,
   Query,
   Res,
@@ -63,6 +64,7 @@ export class RecordingController {
           sha256: true,
           startedAt: true,
           endedAt: true,
+          pinned: true,
         },
       }),
     ]);
@@ -137,6 +139,35 @@ export class RecordingController {
 
     const fileStream = fs.createReadStream(rec.filePath);
     fileStream.pipe(res);
+  }
+
+  /** Toggle the pinned status of a recording (admin only). */
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch(':id/pin')
+  async togglePin(@Param('id') id: string, @Req() req: any) {
+    const rec = await this.prisma.sessionRecording.findUnique({
+      where: { id },
+      select: { id: true, sessionId: true, machineId: true, pinned: true },
+    });
+    if (!rec) throw new NotFoundException();
+
+    const updated = await this.prisma.sessionRecording.update({
+      where: { id },
+      data: { pinned: !rec.pinned },
+      select: { id: true, pinned: true },
+    });
+
+    void this.audit.logAction(
+      req.user.sub,
+      updated.pinned ? 'RECORDING_PINNED' : 'RECORDING_UNPINNED',
+      { recordingId: id, sessionId: rec.sessionId, machineId: rec.machineId },
+      undefined,
+      req.ip,
+      AuditCategory.TERMINAL,
+    );
+
+    return updated;
   }
 
   @UseGuards(RolesGuard)

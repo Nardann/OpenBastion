@@ -10,6 +10,7 @@ import { MachinesModule } from './machines/machines.module';
 import { TerminalModule } from './terminal/terminal.module';
 import { AuditModule } from './audit/audit.module';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_INTERCEPTOR, APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { RbacModule } from './rbac/rbac.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
@@ -39,6 +40,7 @@ import {
     RbacModule,
     MonitoringModule,
     SettingsModule,
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         name: 'global',

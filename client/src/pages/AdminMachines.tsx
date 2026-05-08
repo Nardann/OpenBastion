@@ -28,6 +28,7 @@ const AdminMachines = () => {
   const [activeTab, setActiveTab] = useState<'machines' | 'groups'>('machines');
   const [loading, setLoading] = useState(true);
   const [probing, setProbing] = useState(false);
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -219,20 +220,30 @@ const AdminMachines = () => {
   };
 
   const deleteMachine = async (id: string) => {
+    if (deletingIds.has(id)) return;
     if (!confirm(t('adminMachines.errors.deleteMachineConfirm'))) return;
+    setDeletingIds(prev => new Set(prev).add(id));
     try {
       await api.delete(`/machines/${id}`);
-      fetchMachines();
-    } catch (err) { alert(t('adminMachines.errors.deleteError')); }
+      await fetchMachines();
+    } catch (err) {
+      alert(t('adminMachines.errors.deleteError'));
+    } finally {
+      setDeletingIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+    }
   };
 
   const deleteGroup = async (id: string) => {
+    if (deletingIds.has(id)) return;
     if (!confirm(t('adminMachines.errors.deleteGroupConfirm'))) return;
+    setDeletingIds(prev => new Set(prev).add(id));
     try {
       await api.delete(`/machine-groups/${id}`);
-      fetchGroups();
+      await fetchGroups();
     } catch (error) {
       alert(t('adminMachines.errors.deleteError'));
+    } finally {
+      setDeletingIds(prev => { const next = new Set(prev); next.delete(id); return next; });
     }
   };
 
@@ -415,7 +426,7 @@ const AdminMachines = () => {
                           <button onClick={() => openEditMachine(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title={t('common.edit')}>
                             <Edit2 size={18} />
                           </button>
-                          <button onClick={() => deleteMachine(machine.id)} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all" title={t('common.delete')}>
+                          <button onClick={() => deleteMachine(machine.id)} disabled={deletingIds.has(machine.id)} className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed" title={t('common.delete')}>
                             <Trash2 size={18} />
                           </button>
                         </div>
@@ -501,7 +512,8 @@ const AdminMachines = () => {
                   </button>
                   <button
                     onClick={() => deleteGroup(group.id)}
-                    className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all"
+                    disabled={deletingIds.has(group.id)}
+                    className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     title={t('common.delete')}
                   >
                     <Trash2 size={16} />

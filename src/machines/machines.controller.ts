@@ -100,13 +100,13 @@ export class MachinesController {
   }
 
   @Get()
-  @SkipThrottle()
+  @SkipThrottle({ user: true })
   findAll(@Req() req: any) {
     return this.machinesService.findAllAccessible(req.user.sub, req.user.role);
   }
 
   @Get(':id')
-  @SkipThrottle()
+  @SkipThrottle({ user: true })
   @RequireAccessLevel(AccessLevel.VIEWER)
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.machinesService.findOne(id);

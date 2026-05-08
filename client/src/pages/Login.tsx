@@ -88,6 +88,7 @@ const Login: React.FC = () => {
       <div className="absolute top-8 right-8">
         <button
           onClick={toggleTheme}
+          aria-label={theme === 'light' ? t('common.darkMode') : t('common.lightMode')}
           className="p-3 bg-background-surface border border-border-light rounded-xl text-text-secondary hover:text-primary transition-all shadow-sm"
         >
           {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
@@ -118,14 +119,16 @@ const Login: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setAuthMethod('LOCAL')}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-[10px] font-bold transition-all ${authMethod === 'LOCAL' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
+                      aria-pressed={authMethod === 'LOCAL'}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-xs font-bold transition-all ${authMethod === 'LOCAL' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
                     >
                       <UserIcon size={14} /> {t('login.methodLocal')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setAuthMethod('LDAP')}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-[10px] font-bold transition-all ${authMethod === 'LDAP' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
+                      aria-pressed={authMethod === 'LDAP'}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-xs font-bold transition-all ${authMethod === 'LDAP' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
                     >
                       <Database size={14} /> {t('login.methodLdap')}
                     </button>
@@ -133,13 +136,15 @@ const Login: React.FC = () => {
                 )}
 
                 <div className="space-y-2">
-                  <label className="t-eyebrow px-1">{t('login.identifier')}</label>
+                  <label htmlFor="login-identifier" className="t-eyebrow px-1">{t('login.identifier')}</label>
                   <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
                       <Mail size={16} />
                     </div>
                     <input
+                      id="login-identifier"
                       required
+                      autoComplete={authMethod === 'LOCAL' ? 'username' : 'username'}
                       className="form-input input-with-icon h-11 text-sm"
                       placeholder={authMethod === 'LOCAL' ? t('login.identifierPlaceholder') : t('login.identifierPlaceholderLdap')}
                       value={identifier}
@@ -149,14 +154,16 @@ const Login: React.FC = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="t-eyebrow px-1">{t('login.password')}</label>
+                  <label htmlFor="login-password" className="t-eyebrow px-1">{t('login.password')}</label>
                   <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
                       <Lock size={16} />
                     </div>
                     <input
+                      id="login-password"
                       required
                       type="password"
+                      autoComplete="current-password"
                       className="form-input input-with-icon h-11 text-sm"
                       placeholder={t('login.passwordPlaceholder')}
                       value={password}
@@ -167,14 +174,16 @@ const Login: React.FC = () => {
               </>
             ) : (
               <div className="space-y-2">
-                <label className="t-eyebrow px-1">{t('login.otpCode')}</label>
+                <label htmlFor="login-otp" className="t-eyebrow px-1">{t('login.otpCode')}</label>
                 <div className="relative group">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
                     <ShieldCheck size={16} />
                   </div>
                   <input
+                    id="login-otp"
                     required
                     autoFocus
+                    autoComplete="one-time-code"
                     inputMode="numeric"
                     pattern="\d{6}"
                     className="form-input input-with-icon h-11 text-center text-lg tracking-[0.5em] font-mono"
@@ -184,7 +193,7 @@ const Login: React.FC = () => {
                     onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
                   />
                 </div>
-                <p className="text-[10px] text-text-secondary mt-2 text-center">
+                <p className="text-xs text-text-secondary mt-2 text-center">
                   {t('login.otpHint')}
                 </p>
               </div>
@@ -211,7 +220,7 @@ const Login: React.FC = () => {
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t border-border-light"></span>
                   </div>
-                  <div className="relative flex justify-center text-[10px] uppercase font-bold tracking-widest">
+                  <div className="relative flex justify-center text-xs uppercase font-bold tracking-widest">
                     <span className="bg-background-surface px-2 text-text-secondary">{t('login.ssoLabel')}</span>
                   </div>
                 </div>
@@ -231,7 +240,7 @@ const Login: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setRequiresOtp(false)}
-                className="w-full text-[10px] font-bold text-text-secondary uppercase hover:text-text-main transition-colors"
+                className="w-full text-xs font-bold text-text-secondary uppercase hover:text-text-main transition-colors py-1"
               >
                 {t('login.back')}
               </button>
