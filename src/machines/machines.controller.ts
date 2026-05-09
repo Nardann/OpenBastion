@@ -10,7 +10,10 @@ import {
   Patch,
   ParseUUIDPipe,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
+import * as net from 'node:net';
+import * as dns from 'node:dns/promises';
 import { SkipThrottle } from '@nestjs/throttler';
 import { MachinesService } from './machines.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -60,10 +63,24 @@ export class MachinesController {
   @Post('probe-fingerprint')
   @Roles(Role.ADMIN)
   async probeFingerprint(@Body() body: { ip: string; port: number }) {
+    if (!body?.ip || typeof body.ip !== 'string' || body.ip.length > 255) {
+      throw new BadRequestException('IP/host invalide');
+    }
+    const port = Number(body.port || 22);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new BadRequestException('Port invalide');
+    }
+
+    // SECURITY: prevent SSRF / internal port-scan via this admin endpoint.
+    // Resolve the target and reject any address belonging to internal/
+    // metadata/loopback ranges. Also block container service hostnames the
+    // backend can reach but the operator should never SSH into.
+    await this.assertProbeTargetAllowed(body.ip, port);
+
     try {
       const fingerprint = await this.machinesService.probeFingerprint(
         body.ip,
-        body.port || 22,
+        port,
       );
       return {
         fingerprint,
@@ -76,6 +93,81 @@ export class MachinesController {
         'Impossible de contacter le serveur SSH cible',
       );
     }
+  }
+
+  private async assertProbeTargetAllowed(target: string, port: number): Promise<void> {
+    const HOST_DENY = new Set([
+      'localhost',
+      'postgres',
+      'guacd',
+      'backend',
+      'frontend',
+      'bastion-postgres',
+      'bastion-guacd',
+      'bastion-backend',
+      'bastion-frontend',
+      'host.docker.internal',
+    ]);
+    if (HOST_DENY.has(target.toLowerCase())) {
+      throw new ForbiddenException(
+        'Cible interne refusée (boucle locale ou service interne du bastion)',
+      );
+    }
+
+    // Ports privilégiés autres que 22 → suspect, refusés.
+    if (port < 1024 && port !== 22) {
+      throw new ForbiddenException(
+        'Seul le port 22 est autorisé pour les ports privilégiés',
+      );
+    }
+
+    let candidates: string[];
+    if (net.isIP(target)) {
+      candidates = [target];
+    } else {
+      try {
+        const records = await dns.lookup(target, { all: true });
+        candidates = records.map((r) => r.address);
+      } catch {
+        throw new BadRequestException('Impossible de résoudre le nom DNS');
+      }
+    }
+
+    for (const ip of candidates) {
+      if (this.isPrivateOrReservedIp(ip)) {
+        throw new ForbiddenException(
+          `Cible interne refusée: ${ip} (RFC1918 / loopback / link-local / metadata)`,
+        );
+      }
+    }
+  }
+
+  private isPrivateOrReservedIp(ip: string): boolean {
+    if (net.isIPv4(ip)) {
+      const parts = ip.split('.').map(Number);
+      const [a, b] = parts;
+      if (a === 10) return true;                          // 10.0.0.0/8
+      if (a === 127) return true;                         // 127.0.0.0/8 loopback
+      if (a === 169 && b === 254) return true;            // 169.254.0.0/16 link-local + AWS metadata
+      if (a === 172 && b! >= 16 && b! <= 31) return true; // 172.16.0.0/12
+      if (a === 192 && b === 168) return true;            // 192.168.0.0/16
+      if (a === 100 && b! >= 64 && b! <= 127) return true;// 100.64.0.0/10 CGNAT
+      if (a === 0) return true;                           // 0.0.0.0/8
+      if (a! >= 224) return true;                         // multicast + reserved
+      return false;
+    }
+    if (net.isIPv6(ip)) {
+      const lower = ip.toLowerCase();
+      if (lower === '::1' || lower === '::') return true;
+      if (lower.startsWith('fe80:')) return true;          // link-local
+      if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local
+      if (lower.startsWith('ff')) return true;             // multicast
+      // IPv4-mapped IPv6 like ::ffff:127.0.0.1
+      const m = lower.match(/^::ffff:([0-9.]+)$/);
+      if (m && net.isIPv4(m[1]!)) return this.isPrivateOrReservedIp(m[1]!);
+      return false;
+    }
+    return true;
   }
 
   @Patch(':id')

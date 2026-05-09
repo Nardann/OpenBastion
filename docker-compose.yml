@@ -79,6 +79,10 @@ services:
       GUACD_HOST: ${GUACD_HOST:-guacd}
       GUACD_PORT: ${GUACD_PORT:-4822}
       ENABLE_RDP: ${ENABLE_RDP:-false}
+      # SECURITY: jeton requis en production pour /metrics (sans, /metrics est désactivé)
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # SECURITY: opt-in explicite pour le bypass TLS du discovery OIDC (loopback uniquement)
+      OIDC_ALLOW_INSECURE_TLS: ${OIDC_ALLOW_INSECURE_TLS:-false}
     volumes:
       - recordings_data:/var/lib/bastion/recordings
     depends_on:

@@ -82,6 +82,17 @@ export class UsersService {
     });
   }
 
+  /**
+   * SECURITY: single-query lookup so no information leaks about which field
+   * matched (used by anti-enumeration login path).
+   */
+  async findOneByEmailOrUsername(identifier: string): Promise<User | null> {
+    return this.prisma.user.findFirst({
+      where: { OR: [{ email: identifier }, { username: identifier }] },
+      include: { groups: true },
+    });
+  }
+
   async findOneById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { id },
@@ -159,10 +170,21 @@ export class UsersService {
       'passwordHash' | 'tokenVersion' | 'externalId' | 'otpSecret' | 'pendingOtpSecret'
     >
   > {
-    const user = await this.prisma.user.update({
-      where: { id },
-      data: { tokenVersion: { increment: 1 } },
-    });
+    // SECURITY: bumping tokenVersion only invalidates the current access JWT.
+    // Without revoking the refresh tokens too, the target can immediately
+    // POST /auth/refresh, get a JWT signed with the new tokenVersion, and
+    // continue. Do BOTH atomically so admin revoke actually terminates the
+    // session.
+    const [user] = await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id },
+        data: { tokenVersion: { increment: 1 } },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
     return this.sanitizeUser(user);
   }
 }

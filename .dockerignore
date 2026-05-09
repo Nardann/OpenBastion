@@ -1,0 +1,30 @@
+# SECURITY: do NOT ship secrets, DB data or worktrees inside image build contexts.
+.env
+.env.*
+.git
+.gitignore
+.claude
+.vscode
+*.log
+
+# Postgres data (host-mounted as a volume)
+pg_data
+pg_data_new
+
+# TLS material (host-mounted as a volume)
+certs
+
+# Frontend artifacts (frontend image has its own context)
+client/node_modules
+client/dist
+
+# Build / runtime artifacts
+node_modules
+dist
+coverage
+
+# Docs / dev-only files
+README.md
+docs
+test
+VALIDATION_CHECKLIST.md

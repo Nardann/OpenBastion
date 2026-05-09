@@ -56,9 +56,12 @@ const en = {
     subtitle: "Privilege elevation is required to access this area.",
     otpLabel: "OTP verification code",
     confirmLabel: "Confirm access",
+    passwordLabel: "Confirm your password",
+    passwordPlaceholder: "Current password",
     clickHint: "Click the button below to activate administrator mode.",
     activate: "Activate admin mode",
     cancel: "Cancel",
+    otpRecommendation: "Enable OTP in your profile to avoid entering your password at every elevation.",
   },
   sessions: {
     title: "Recorded Sessions",

@@ -42,10 +42,23 @@ export class OidcService {
     return lib;
   }
 
-  private isInternalIssuer(issuerUrl: string): boolean {
+  /**
+   * SECURITY: TLS bypass eligibility for OIDC discovery/token fetch.
+   *
+   * Two conditions must BOTH be met before we accept a self-signed/expired
+   * certificate from the IdP:
+   *   1. Operator explicitly set OIDC_ALLOW_INSECURE_TLS=true.
+   *   2. The issuer hostname is strictly loopback (`localhost` or `127.0.0.1`).
+   *
+   * The previous heuristic also matched `host.docker.internal` and the
+   * entire 192.168.0.0/16 LAN range, allowing transparent MITM by anyone on
+   * the same network. We now ignore NODE_ENV entirely for this decision.
+   */
+  private allowsInsecureTls(issuerUrl: string): boolean {
+    if (process.env['OIDC_ALLOW_INSECURE_TLS'] !== 'true') return false;
     try {
       const host = new URL(issuerUrl).hostname;
-      return /^(localhost|127\.0\.0\.1|host\.docker\.internal|(192\.168\.\d{1,3}\.\d{1,3}))$/.test(host);
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
     } catch {
       return false;
     }
@@ -133,9 +146,7 @@ export class OidcService {
 
       const oidc = await this.getOpenidClient();
       const discovery = oidc['discovery'] as (issuer: URL, clientId: string, clientSecret: string, ...args: unknown[]) => Promise<unknown>;
-      const isInternal = this.isInternalIssuer(issuerUrl);
-      const isDevEnv = process.env.NODE_ENV !== 'production';
-      const useInsecure = isInternal && isDevEnv;
+      const useInsecure = this.allowsInsecureTls(issuerUrl);
 
       let serverMetadata: unknown;
       if (useInsecure) {
@@ -208,7 +219,7 @@ export class OidcService {
       const provider = await this.authProvidersService.findByType('OIDC');
       const config = provider!.config as OidcProviderConfig;
       const issuerUrl = config.issuer;
-      const useInsecure = this.isInternalIssuer(issuerUrl) && process.env.NODE_ENV !== 'production';
+      const useInsecure = this.allowsInsecureTls(issuerUrl);
 
       const grantOpts: Record<string, unknown> = {
         pkceCodeVerifier: codeVerifier,

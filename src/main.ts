@@ -18,11 +18,51 @@ async function bootstrap() {
   // SECURITY FIX: Trust proxy so req.ip returns the actual client IP
   app.set('trust proxy', 1);
 
-  // Security Headers (CSP, HSTS, Clickjacking protection)
-  app.use(helmet());
+  // Security Headers (HSTS, clickjacking, no-sniff, etc.)
+  // SECURITY: nginx already emits a strict CSP for the public app — having
+  // helmet send a different CSP at the same time leaves the browser with
+  // two separate policies whose intersection is harder to reason about.
+  // We disable helmet's CSP and keep the single nginx-emitted policy.
+  // We also disable helmet's frameguard because nginx sets X-Frame-Options
+  // to DENY (helmet would override to SAMEORIGIN).
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      frameguard: false,
+    }),
+  );
 
   // Enable CORS before body parsers
   app.enableCors(getCorsConfig());
+
+  // SECURITY: enforce that mutating requests from the browser carry an
+  // Origin header. The CORS layer already rejects disallowed origins; this
+  // closes the gap for clients that simply omit Origin altogether (curl,
+  // misconfigured proxies, server-side scripts) on POST/PATCH/PUT/DELETE.
+  // SameSite=Strict cookies still mitigate browser CSRF; this just removes
+  // the legacy "no Origin → bypass" code path on mutations.
+  const ORIGIN_REQUIRED_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+  const ORIGIN_EXEMPT_PATHS = [
+    /^\/api\/auth\/oidc\/callback/,        // server-to-server redirect from IdP
+    /^\/auth\/oidc\/callback/,
+    /^\/api\/health/,
+    /^\/health/,
+  ];
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (!ORIGIN_REQUIRED_METHODS.has(req.method)) return next();
+    if (ORIGIN_EXEMPT_PATHS.some((re) => re.test(req.url))) return next();
+    const origin = req.headers['origin'];
+    const referer = req.headers['referer'];
+    if (!origin && !referer) {
+      res.status(403).json({
+        statusCode: 403,
+        message: 'Origin or Referer header required for mutating requests',
+        error: 'Forbidden',
+      });
+      return;
+    }
+    next();
+  });
 
   // Configure body parsers WITH limits
   app.use(json({ limit: '50kb' }));
@@ -46,7 +86,17 @@ async function bootstrap() {
         // SECURITY FIX: Mask sensitive data in validation logs
         const sanitizedErrors = errors.map((error) => {
           const sanitizedTarget = { ...(error.target as any) };
-          ['password', 'privateKey', 'currentPassword'].forEach((key) => {
+          [
+            'password',
+            'privateKey',
+            'currentPassword',
+            'code',
+            'tempToken',
+            'clientSecret',
+            'bindPassword',
+            'refresh_token',
+            'refreshToken',
+          ].forEach((key) => {
             if (sanitizedTarget[key]) sanitizedTarget[key] = '***REDACTED***';
           });
           return { ...error, target: sanitizedTarget };
