@@ -19,6 +19,7 @@ import { parseCookies } from '../common/utils/security';
 import { StartSessionDto, ResizeSessionDto } from './dto/terminal.dto';
 import { AuditService, AuditCategory } from '../audit/audit.service';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
+import { UsersService } from '../users/users.service';
 import { SessionRecorderService } from './recording/session-recorder.service';
 import { getCorsConfig } from '../common/config/cors.config';
 import * as crypto from 'node:crypto';
@@ -69,6 +70,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly rbacService: RbacService,
     private readonly auditService: AuditService,
     private readonly tokenBlacklistService: TokenBlacklistService,
+    private readonly usersService: UsersService,
     private readonly recorder: SessionRecorderService,
   ) {}
 
@@ -117,10 +119,40 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const payload = this.jwtService.verify(jwt, {
         secret: this.configService.getOrThrow('JWT_SECRET'),
       });
-      client.data.user = payload;
+
+      // SECURITY: re-fetch the user so we honour current DB state — JWT
+      // payload may be stale w.r.t. tokenVersion / requiresPasswordChange,
+      // and the previous WS code was bypassing JwtAuthGuard's password-
+      // rotation lockout.
+      const dbUser = await this.usersService.findOneById(payload.sub);
+      if (!dbUser) {
+        client.disconnect();
+        return;
+      }
+      const payloadVersion = payload.version ?? -1;
+      if (dbUser.tokenVersion !== payloadVersion) {
+        this.logger.warn(`WS rejected: stale tokenVersion for user ${dbUser.id}`);
+        client.disconnect();
+        return;
+      }
+      if (dbUser.requiresPasswordChange) {
+        this.logger.warn(`WS rejected: user ${dbUser.id} must rotate bootstrap password`);
+        client.emit('error', 'Password change required');
+        client.disconnect();
+        return;
+      }
+
+      client.data.user = {
+        sub: dbUser.id,
+        email: dbUser.email,
+        username: dbUser.username,
+        role: dbUser.role,
+        authMethod: dbUser.authMethod,
+        isAdminMode: !!payload.isAdminMode,
+      };
 
       // SECURITY FIX: Rate limit sessions per user to prevent resource exhaustion
-      const userId = payload.sub;
+      const userId = dbUser.id;
       const currentSessions = this.userSessions.get(userId) || 0;
 
       if (currentSessions >= this.MAX_SESSIONS_PER_USER) {

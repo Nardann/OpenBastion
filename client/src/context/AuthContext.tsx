@@ -25,7 +25,7 @@ interface AuthContextType {
     requiresPasswordChange?: boolean;
   }>;
   loginOtp: (tempToken: string, code: string) => Promise<void>;
-  sudo: (code?: string) => Promise<void>;
+  sudo: (args?: { code?: string; password?: string }) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
@@ -73,8 +73,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(response.data.user);
   };
 
-  const sudo = async (code?: string) => {
-    await api.post('/auth/sudo', { code });
+  const sudo = async (args?: { code?: string; password?: string }) => {
+    const body: { code?: string; password?: string } = {};
+    if (args?.code) body.code = args.code;
+    if (args?.password) body.password = args.password;
+    await api.post('/auth/sudo', body);
     await checkAuth();
   };
 

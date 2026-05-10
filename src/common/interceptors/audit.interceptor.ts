@@ -81,6 +81,14 @@ export class AuditInterceptor implements NestInterceptor {
             'clientSecret',
             'bindPassword',
             'bindCredentials',
+            // SECURITY: OTP codes have a 30-90s lifetime but logging them
+            // still leaks the user's authenticator output to anyone with
+            // audit-log access. Same for the partial-auth tempToken and
+            // any refresh token echoed in a body.
+            'code',
+            'tempToken',
+            'refresh_token',
+            'refreshToken',
           ];
           return Object.fromEntries(
             Object.entries(obj).map(([k, v]) => [

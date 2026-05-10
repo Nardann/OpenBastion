@@ -5,12 +5,15 @@ import {
   Res,
   UnauthorizedException,
   BadRequestException,
+  ForbiddenException,
   Get,
   UseGuards,
   Req,
   Param,
   Patch,
+  ParseUUIDPipe,
 } from '@nestjs/common';
+import * as argon2 from 'argon2';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import type { Response } from 'express';
@@ -25,6 +28,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
 import { LoginOtpDto, SudoDto, VerifyOtpDto } from './dto/otp.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import {
+  UpsertAuthProviderDto,
+  validateProviderConfig,
+} from './dto/auth-provider.dto';
 import {
   JWT_COOKIE_MAX_AGE_MS,
   JWT_REFRESH_COOKIE_MAX_AGE_MS,
@@ -51,21 +58,39 @@ export class AuthController {
     private prisma: PrismaService,
   ) {}
 
-  private get cookieBase() {
+  /**
+   * SECURITY: cookie hardening must be driven by the actual transport, not
+   * by NODE_ENV. We mark Secure whenever the request reaches us over HTTPS
+   * (either directly or via X-Forwarded-Proto from nginx, which we trust
+   * thanks to `app.set('trust proxy', 1)`). We only allow the unsecured
+   * fallback when explicitly running outside production over plain HTTP
+   * for local dev — never silently for HTTPS clients.
+   */
+  private cookieBaseFor(req: any) {
+    const isSecure =
+      !!req?.secure ||
+      (typeof req?.protocol === 'string' && req.protocol === 'https') ||
+      req?.headers?.['x-forwarded-proto'] === 'https';
     return {
       httpOnly: true,
-      secure: this.isProduction,
+      secure: isSecure || this.isProduction,
       sameSite: 'strict' as const,
     };
   }
 
-  private setAuthCookies(response: Response, accessToken: string, refreshToken: string) {
+  private setAuthCookies(
+    response: Response,
+    accessToken: string,
+    refreshToken: string,
+    req?: any,
+  ) {
+    const base = this.cookieBaseFor(req);
     response.cookie('jwt', accessToken, {
-      ...this.cookieBase,
+      ...base,
       maxAge: JWT_COOKIE_MAX_AGE_MS,
     });
     response.cookie('refresh_token', refreshToken, {
-      ...this.cookieBase,
+      ...base,
       maxAge: JWT_REFRESH_COOKIE_MAX_AGE_MS,
       path: '/api/auth/refresh',
     });
@@ -83,14 +108,29 @@ export class AuthController {
   @Get('providers')
   @SkipThrottle()
   async getProviders() {
+    // SECURITY: this endpoint is anonymous (login screen needs to know which
+    // providers are enabled). NEVER return decrypted credentials here. Only
+    // a minimal projection — login UI only needs id/name/type/enabled and a
+    // public OIDC redirect target when applicable.
     const providers = await this.authProvidersService.findAllEnabled();
-    return providers.map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      type: p.type,
-      enabled: p.enabled,
-      config: p.config,
-    }));
+    return providers.map((p: any) => {
+      const out: Record<string, unknown> = {
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        enabled: p.enabled,
+      };
+      // For OIDC, the login UI may need to render a "Sign in with …" button
+      // pointing to /auth/oidc/login — issuer hostname is the only safe hint.
+      if (p.type === 'OIDC' && p.config?.issuer) {
+        try {
+          out['issuerHost'] = new URL(p.config.issuer).hostname;
+        } catch {
+          /* ignore malformed issuer */
+        }
+      }
+      return out;
+    });
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -109,8 +149,25 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Patch('providers/:id')
-  async updateProvider(@Param('id') id: string, @Body() body: any) {
-    const result = await this.authProvidersService.update(id, body);
+  async updateProvider(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: UpsertAuthProviderDto,
+  ) {
+    const validatedConfig = await validateProviderConfig(
+      body.type,
+      body.config ?? {},
+    ).catch((err) => {
+      throw new BadRequestException({
+        message: err.message,
+        errors: (err as any).details ?? [],
+      });
+    });
+
+    const updatePayload: { config: typeof validatedConfig; enabled?: boolean } = {
+      config: validatedConfig,
+    };
+    if (body.enabled !== undefined) updatePayload.enabled = body.enabled;
+    const result = await this.authProvidersService.update(id, updatePayload);
 
     await this.auditService.logAction(
       null as any,
@@ -130,23 +187,40 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Post('providers/upsert')
-  async upsertProvider(@Body() body: any) {
-    const { type, config, enabled } = body;
+  async upsertProvider(@Body() body: UpsertAuthProviderDto) {
+    // Validate the inner config against the per-type schema. Without this,
+    // arbitrary objects could be persisted (CVE: stored config injection).
+    const validatedConfig = await validateProviderConfig(
+      body.type,
+      body.config ?? {},
+    ).catch((err) => {
+      throw new BadRequestException({
+        message: err.message,
+        errors: (err as any).details ?? [],
+      });
+    });
+
     const existing = await this.prisma.authProvider.findFirst({
-      where: { type },
+      where: { type: body.type },
     });
 
     let result;
     if (existing) {
-      result = await this.authProvidersService.update(existing.id, { config, enabled });
+      const upsertPayload: { config: typeof validatedConfig; enabled?: boolean } = {
+        config: validatedConfig,
+      };
+      if (body.enabled !== undefined) upsertPayload.enabled = body.enabled;
+      result = await this.authProvidersService.update(existing.id, upsertPayload);
     } else {
       result = await this.authProvidersService.create({
-        name: type === 'LDAP' ? 'LDAP Provider' : 'OIDC Provider',
-        type,
-        config,
+        name: body.type === 'LDAP' ? 'LDAP Provider' : 'OIDC Provider',
+        type: body.type,
+        config: validatedConfig,
       });
-      if (enabled !== undefined) {
-        await this.authProvidersService.update(result.id, { enabled });
+      if (body.enabled !== undefined) {
+        await this.authProvidersService.update(result.id, {
+          enabled: body.enabled,
+        });
       }
     }
 
@@ -193,7 +267,7 @@ export class AuthController {
     );
 
     this.setNoCacheHeaders(response);
-    this.setAuthCookies(response, access_token, refreshToken);
+    this.setAuthCookies(response, access_token, refreshToken, request);
 
     return {
       message: 'Login successful',
@@ -238,7 +312,7 @@ export class AuthController {
         AuditCategory.AUTH,
       );
 
-      this.setAuthCookies(response, access_token, refreshToken);
+      this.setAuthCookies(response, access_token, refreshToken, request);
 
       return {
         message: 'Login successful',
@@ -274,7 +348,7 @@ export class AuthController {
     const { access_token } = await this.authService.login(user);
 
     this.setNoCacheHeaders(response);
-    this.setAuthCookies(response, access_token, newToken);
+    this.setAuthCookies(response, access_token, newToken, request);
 
     return { message: 'Token refreshed' };
   }
@@ -290,10 +364,27 @@ export class AuthController {
     const user = await this.prisma.user.findUnique({ where: { id: req.user.sub } });
     if (!user || user.role !== 'ADMIN') throw new UnauthorizedException('Accès refusé');
 
+    // SECURITY: sudo requires fresh proof of identity. Order:
+    //   1. If OTP enabled → require valid OTP.
+    //   2. Else if LOCAL account → require current password (step-up).
+    //   3. Else (LDAP/OIDC without OTP) → refuse: enable OTP first.
     if (user.isOtpEnabled) {
       if (!body.code) throw new BadRequestException('Code OTP requis');
       const isValid = await this.authService.verifyOtp(user.id, body.code);
       if (!isValid) throw new BadRequestException('Code OTP invalide');
+    } else if (user.authMethod === 'LOCAL') {
+      if (!body.password)
+        throw new BadRequestException(
+          'Mot de passe requis pour entrer en mode admin (configurez l\'OTP pour éviter cette étape)',
+        );
+      if (!user.passwordHash)
+        throw new UnauthorizedException('Compte sans mot de passe local');
+      const ok = await argon2.verify(user.passwordHash, body.password);
+      if (!ok) throw new BadRequestException('Mot de passe incorrect');
+    } else {
+      throw new ForbiddenException(
+        'Activez l\'OTP avant d\'utiliser le mode admin pour ce type de compte',
+      );
     }
 
     const { access_token } = await this.authService.login(user, true);
@@ -308,7 +399,7 @@ export class AuthController {
       AuditCategory.AUTH,
     );
 
-    this.setAuthCookies(response, access_token, refreshToken);
+    this.setAuthCookies(response, access_token, refreshToken, req);
     return { message: 'Sudo mode activated' };
   }
 
@@ -331,7 +422,7 @@ export class AuthController {
     const { access_token } = await this.authService.login(user, req.user.isAdminMode);
     const refreshToken = await this.refreshTokenService.create(user!.id);
 
-    this.setAuthCookies(response, access_token, refreshToken);
+    this.setAuthCookies(response, access_token, refreshToken, req);
     return { message: 'OTP activé avec succès' };
   }
 
@@ -349,13 +440,13 @@ export class AuthController {
     const { access_token } = await this.authService.login(user, req.user.isAdminMode);
     const refreshToken = await this.refreshTokenService.create(user!.id);
 
-    this.setAuthCookies(response, access_token, refreshToken);
+    this.setAuthCookies(response, access_token, refreshToken, req);
     return { message: 'OTP désactivé avec succès' };
   }
 
   @Get('oidc/login')
   @Throttle({ auth: { limit: THROTTLE_AUTH_LIMIT, ttl: THROTTLE_AUTH_TTL } })
-  async oidcLogin(@Res() res: Response) {
+  async oidcLogin(@Req() req: any, @Res() res: Response) {
     const state = crypto.randomBytes(16).toString('hex');
     const nonce = crypto.randomBytes(16).toString('hex');
     const codeVerifier = crypto.randomBytes(48).toString('base64url');
@@ -363,11 +454,15 @@ export class AuthController {
     const url = await this.oidcService.getAuthorizationUrl(state, nonce, codeVerifier);
     if (!url) throw new UnauthorizedException('OIDC not configured');
 
+    const isSecure =
+      !!req?.secure ||
+      req?.protocol === 'https' ||
+      req?.headers?.['x-forwarded-proto'] === 'https';
     const oidcCookieOptions = {
       httpOnly: true,
       sameSite: 'lax' as const,
       maxAge: 300000,
-      secure: this.isProduction,
+      secure: isSecure || this.isProduction,
     };
 
     res.cookie('oidc_state', state, oidcCookieOptions);
@@ -416,7 +511,11 @@ export class AuthController {
     );
 
     this.setNoCacheHeaders(response);
-    this.setAuthCookies(response, access_token, refreshToken);
+    this.setAuthCookies(response, access_token, refreshToken, request);
+    // SECURITY: clear OIDC handshake cookies — single-use only.
+    response.clearCookie('oidc_state');
+    response.clearCookie('oidc_nonce');
+    response.clearCookie('oidc_code_verifier');
     response.redirect('/');
   }
 

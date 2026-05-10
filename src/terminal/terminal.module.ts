@@ -14,6 +14,7 @@ import { RecordingController } from './recording/recording.controller';
 import { RecordingCleanupService } from './recording/recording-cleanup.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SettingsModule } from '../settings/settings.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SettingsModule } from '../settings/settings.module';
     SshModule,
     PrismaModule,
     SettingsModule,
+    UsersModule,
   ],
   providers: [SshGateway, RdpGateway, RdpService, SessionRecorderService, RecordingCleanupService],
   controllers: [RecordingController],

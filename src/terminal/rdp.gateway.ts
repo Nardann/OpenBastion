@@ -19,6 +19,7 @@ import { RbacService } from '../rbac/rbac.service';
 import { ConfigService } from '../config/config.service';
 import { AuditService, AuditCategory } from '../audit/audit.service';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
+import { UsersService } from '../users/users.service';
 import { parseCookies } from '../common/utils/security';
 import { getCorsConfig } from '../common/config/cors.config';
 import { encodeInstruction } from './guac-protocol';
@@ -74,6 +75,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly rbacService: RbacService,
     private readonly auditService: AuditService,
     private readonly tokenBlacklistService: TokenBlacklistService,
+    private readonly usersService: UsersService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -110,17 +112,46 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const payload = this.jwtService.verify(jwt, {
         secret: this.configService.getOrThrow('JWT_SECRET'),
       });
-      client.data.user = payload;
 
-      const currentSessions = this.userSessions.get(payload.sub) || 0;
+      // SECURITY: same DB-backed re-check as the SSH gateway. Without this
+      // the WS path was bypassing JwtAuthGuard's tokenVersion and
+      // requiresPasswordChange enforcement.
+      const dbUser = await this.usersService.findOneById(payload.sub);
+      if (!dbUser) {
+        client.disconnect();
+        return;
+      }
+      const payloadVersion = payload.version ?? -1;
+      if (dbUser.tokenVersion !== payloadVersion) {
+        this.logger.warn(`RDP WS rejected: stale tokenVersion for user ${dbUser.id}`);
+        client.disconnect();
+        return;
+      }
+      if (dbUser.requiresPasswordChange) {
+        this.logger.warn(`RDP WS rejected: user ${dbUser.id} must rotate bootstrap password`);
+        client.emit('error', 'Password change required');
+        client.disconnect();
+        return;
+      }
+
+      client.data.user = {
+        sub: dbUser.id,
+        email: dbUser.email,
+        username: dbUser.username,
+        role: dbUser.role,
+        authMethod: dbUser.authMethod,
+        isAdminMode: !!payload.isAdminMode,
+      };
+
+      const currentSessions = this.userSessions.get(dbUser.id) || 0;
       if (currentSessions >= this.MAX_SESSIONS_PER_USER) {
         this.logger.warn(
-          `User ${payload.sub} exceeded max RDP sessions (${this.MAX_SESSIONS_PER_USER})`,
+          `User ${dbUser.id} exceeded max RDP sessions (${this.MAX_SESSIONS_PER_USER})`,
         );
         client.disconnect();
         return;
       }
-      this.userSessions.set(payload.sub, currentSessions + 1);
+      this.userSessions.set(dbUser.id, currentSessions + 1);
     } catch {
       client.disconnect();
     }

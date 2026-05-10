@@ -56,9 +56,12 @@ const fr = {
     subtitle: "Une élévation de privilèges est requise pour accéder à cette zone.",
     otpLabel: "Code OTP de vérification",
     confirmLabel: "Confirmer l'accès",
+    passwordLabel: "Confirmer votre mot de passe",
+    passwordPlaceholder: "Mot de passe actuel",
     clickHint: "Cliquez sur le bouton ci-dessous pour activer le mode administrateur.",
     activate: "Activer le mode admin",
     cancel: "Annuler",
+    otpRecommendation: "Activez l'OTP dans votre profil pour éviter de saisir votre mot de passe à chaque élévation.",
   },
   sessions: {
     title: "Sessions Enregistrées",

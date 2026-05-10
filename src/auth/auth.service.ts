@@ -11,12 +11,32 @@ import { VaultService } from '../vault/vault.service';
 import { OtpLockoutService } from './otp-lockout.service';
 import * as argon2 from 'argon2';
 import { AuthMethod } from '@prisma/client';
-import { generateSecret, keyuri, verify as totpVerify } from './totp';
+import { generateSecret, keyuri, verifyWithCounter } from './totp';
 import * as qrcode from 'qrcode';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+
+  // SECURITY: in-memory replay cache for OTP. The accepted counter for each
+  // user is stored for ~5 min so that a captured 6-digit code cannot be
+  // re-used inside its own validity window. We don't persist this in DB to
+  // avoid a schema migration; the worst case (process restart) just allows
+  // one extra reuse window per user, which is negligible vs lockout.
+  private readonly otpLastCounter = new Map<string, { counter: number; ts: number }>();
+  private readonly OTP_REPLAY_TTL_MS = 5 * 60_000;
+
+  // SECURITY: anti-enumeration. We always run argon2.verify, even when the
+  // identifier doesn't match any user, so the response time is constant
+  // regardless of account existence. The dummy hash is generated lazily on
+  // first miss and reused (process-lifetime).
+  private dummyHashPromise: Promise<string> | null = null;
+  private getDummyHash(): Promise<string> {
+    if (!this.dummyHashPromise) {
+      this.dummyHashPromise = argon2.hash('anti-enum-dummy-input');
+    }
+    return this.dummyHashPromise;
+  }
 
   constructor(
     private usersService: UsersService,
@@ -25,6 +45,13 @@ export class AuthService {
     private vault: VaultService,
     private otpLockout: OtpLockoutService,
   ) {}
+
+  private gcOtpReplayCache() {
+    const now = Date.now();
+    for (const [k, v] of this.otpLastCounter) {
+      if (now - v.ts > this.OTP_REPLAY_TTL_MS) this.otpLastCounter.delete(k);
+    }
+  }
 
   async changePassword(
     userId: string,
@@ -52,18 +79,23 @@ export class AuthService {
     this.logger.debug(`Validating user via ${method}`);
 
     if (method === AuthMethod.LOCAL) {
-      let user = await this.usersService.findOneByEmail(identifier);
-      if (!user) user = await this.usersService.findOneByUsername(identifier);
-
-      if (user && user.authMethod === AuthMethod.LOCAL) {
-        if (
-          user.passwordHash &&
-          (await argon2.verify(user.passwordHash, pass))
-        ) {
-          const { passwordHash, ...result } = user;
-          return result;
-        }
+      // SECURITY: collapse the email/username lookups into one OR query so a
+      // missed lookup doesn't leak which channel matched, AND always perform
+      // a real argon2.verify (against a dummy hash if the user is missing or
+      // not LOCAL) so the response time is constant.
+      const user = await this.usersService.findOneByEmailOrUsername(identifier);
+      const isLocalCandidate = !!user
+        && user.authMethod === AuthMethod.LOCAL
+        && !!user.passwordHash;
+      const hashToCheck = isLocalCandidate
+        ? user!.passwordHash!
+        : await this.getDummyHash();
+      const argonOk = await argon2.verify(hashToCheck, pass);
+      if (isLocalCandidate && argonOk) {
+        const { passwordHash, ...result } = user!;
+        return result;
       }
+      return null;
     }
 
     if (method === AuthMethod.LDAP) {
@@ -114,29 +146,38 @@ export class AuthService {
     if (!user || !user.otpSecret) return false;
 
     let rawSecret: string;
+    let lazyReencrypt = false;
     try {
       rawSecret = this.vault.decrypt(user.otpSecret, `otp:${userId}`);
     } catch {
+      // Legacy plaintext secret — lazily re-encrypt on first successful use.
       rawSecret = user.otpSecret;
-      const valid = totpVerify({ token: code, secret: rawSecret });
-      if (valid) {
-        await this.otpLockout.reset(userId);
+      lazyReencrypt = true;
+    }
+
+    this.gcOtpReplayCache();
+    const last = this.otpLastCounter.get(userId)?.counter;
+    const verifyArgs: {
+      token: string;
+      secret: string;
+      lastUsedCounter?: number;
+    } = { token: code, secret: rawSecret };
+    if (typeof last === 'number') verifyArgs.lastUsedCounter = last;
+    const matched = verifyWithCounter(verifyArgs);
+
+    if (matched !== null) {
+      this.otpLastCounter.set(userId, { counter: matched, ts: Date.now() });
+      await this.otpLockout.reset(userId);
+      if (lazyReencrypt) {
         await this.usersService.update(userId, {
           otpSecret: this.vault.encrypt(rawSecret, `otp:${userId}`),
         });
-      } else {
-        await this.otpLockout.recordFailure(userId);
       }
-      return valid;
+      return true;
     }
 
-    const valid = totpVerify({ token: code, secret: rawSecret });
-    if (valid) {
-      await this.otpLockout.reset(userId);
-    } else {
-      await this.otpLockout.recordFailure(userId);
-    }
-    return valid;
+    await this.otpLockout.recordFailure(userId);
+    return false;
   }
 
   async enableOtp(userId: string, code: string) {
@@ -154,8 +195,12 @@ export class AuthService {
       throw new BadRequestException('Secret OTP en attente invalide ou corrompu');
     }
 
-    const isValid = totpVerify({ token: code, secret: rawPending });
-    if (!isValid) throw new BadRequestException('Code OTP invalide');
+    const matched = verifyWithCounter({ token: code, secret: rawPending });
+    if (matched === null) throw new BadRequestException('Code OTP invalide');
+
+    // Mark this counter as consumed so the same code can't be reused right
+    // after enabling.
+    this.otpLastCounter.set(userId, { counter: matched, ts: Date.now() });
 
     return this.usersService.update(userId, {
       isOtpEnabled: true,

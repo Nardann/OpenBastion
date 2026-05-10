@@ -24,6 +24,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
   const { user, loading, sudo } = useAuth();
   const { t } = useLang();
   const [sudoCode, setSudoCode] = React.useState('');
+  const [sudoPassword, setSudoPassword] = React.useState('');
   const [elevating, setElevating] = React.useState(false);
   const [error, setError] = React.useState('');
 
@@ -49,7 +50,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
       setError('');
       setElevating(true);
       try {
-        await sudo(sudoCode.trim() || undefined);
+        const args: { code?: string; password?: string } = {};
+        if (user.isOtpEnabled && sudoCode.trim()) args.code = sudoCode.trim();
+        if (!user.isOtpEnabled && sudoPassword) args.password = sudoPassword;
+        await sudo(args);
+        setSudoPassword('');
       } catch (err: any) {
         setError(err.response?.data?.message || t('common.error'));
       } finally {
@@ -79,7 +84,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
 
             <div className="space-y-2">
               <label className="t-eyebrow px-1">
-                {user.isOtpEnabled ? t('sudo.otpLabel') : t('sudo.confirmLabel')}
+                {user.isOtpEnabled ? t('sudo.otpLabel') : t('sudo.passwordLabel')}
               </label>
               <div className="relative group">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
@@ -96,11 +101,23 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
                     onChange={(e) => setSudoCode(e.target.value)}
                   />
                 ) : (
-                  <div className="p-4 bg-background-app rounded-lg border border-border-light text-center text-xs text-text-secondary">
-                    {t('sudo.clickHint')}
-                  </div>
+                  <input
+                    required
+                    autoFocus
+                    type="password"
+                    autoComplete="current-password"
+                    className="form-input input-with-icon h-11"
+                    placeholder={t('sudo.passwordPlaceholder')}
+                    value={sudoPassword}
+                    onChange={(e) => setSudoPassword(e.target.value)}
+                  />
                 )}
               </div>
+              {!user.isOtpEnabled && (
+                <p className="text-[11px] text-text-secondary px-1 pt-1">
+                  {t('sudo.otpRecommendation')}
+                </p>
+              )}
             </div>
 
             <button

@@ -57,10 +57,57 @@ export function keyuri(email: string, issuer: string, secret: string): string {
   return `otpauth://totp/${label}?${params.toString()}`;
 }
 
-export function verify({ token, secret }: { token: string; secret: string }): boolean {
+function timingSafeStrEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Verify a TOTP token.
+ *   - Window: ±1 step (covers ~30s clock skew in either direction).
+ *   - Comparison: constant-time over the candidate codes.
+ *   - Replay protection: caller must remember `(userId, counter)` of the
+ *     last accepted value and reject any equal or older counter. We expose
+ *     the matched counter so the caller can persist it.
+ */
+export function verify({
+  token,
+  secret,
+}: {
+  token: string;
+  secret: string;
+}): boolean {
+  return verifyWithCounter({ token, secret }) !== null;
+}
+
+export function verifyWithCounter({
+  token,
+  secret,
+  lastUsedCounter,
+}: {
+  token: string;
+  secret: string;
+  lastUsedCounter?: number;
+}): number | null {
+  if (!/^\d{6}$/.test(token)) return null;
   const counter = Math.floor(Date.now() / 1000 / 30);
-  for (const delta of [0, 1]) {
-    if (hotp(secret, counter + delta) === token) return true;
+  // Iterate -1, 0, +1 so the most likely (current) counter is checked, but
+  // we still walk the full window in constant-time-friendly order.
+  let matched: number | null = null;
+  for (const delta of [-1, 0, 1]) {
+    const c = counter + delta;
+    const candidate = hotp(secret, c);
+    if (timingSafeStrEqual(candidate, token)) {
+      matched = c;
+      // Don't early-return: keep doing comparisons to avoid timing leaks.
+    }
   }
-  return false;
+  if (matched === null) return null;
+  if (typeof lastUsedCounter === 'number' && matched <= lastUsedCounter) {
+    // Replay: same code or an older window already consumed.
+    return null;
+  }
+  return matched;
 }
