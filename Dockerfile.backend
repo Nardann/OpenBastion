@@ -1,5 +1,5 @@
 # Production Dockerfile for NestJS Backend
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Stage 2: Runner
-FROM node:20-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 
