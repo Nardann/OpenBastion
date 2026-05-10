@@ -19,16 +19,15 @@ async function bootstrap() {
   app.set('trust proxy', 1);
 
   // Security Headers (HSTS, clickjacking, no-sniff, etc.)
-  // SECURITY: nginx already emits a strict CSP for the public app — having
-  // helmet send a different CSP at the same time leaves the browser with
-  // two separate policies whose intersection is harder to reason about.
-  // We disable helmet's CSP and keep the single nginx-emitted policy.
-  // We also disable helmet's frameguard because nginx sets X-Frame-Options
-  // to DENY (helmet would override to SAMEORIGIN).
+  // Keep Helmet protections enabled in-app for defense in depth.
   app.use(
     helmet({
-      contentSecurityPolicy: false,
-      frameguard: false,
+      frameguard: { action: 'deny' },
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+        },
+      },
     }),
   );
 
