@@ -32,8 +32,10 @@ async function bootstrap() {
     }),
   );
 
-  // Enable CORS before body parsers
-  app.enableCors(getCorsConfig());
+  // Enable CORS before body parsers. Cast: the upstream `cors` types model
+  // the delegate's `req` as `any` while ours is typed; the runtime contract
+  // is identical so we cast through `unknown` for a single line.
+  app.enableCors(getCorsConfig() as unknown as Parameters<typeof app.enableCors>[0]);
 
   // SECURITY: enforce that mutating requests from the browser carry an
   // Origin header. The CORS layer already rejects disallowed origins; this

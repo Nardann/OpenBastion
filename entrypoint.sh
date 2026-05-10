@@ -1,7 +1,12 @@
 #!/bin/sh
 set -e
 
-# SECURITY FIX: Verify that the nestjs user exists before attempting to use it
+# SECURITY: the runtime image is read-only (compose: read_only:true). The
+# Prisma client was generated at BUILD time (Dockerfile.backend stage 1)
+# and shipped inside /app/node_modules/.prisma — there is nothing to
+# regenerate at boot. We only run `migrate deploy` which is read-only on
+# the filesystem (it just talks to Postgres).
+
 if ! id "nestjs" >/dev/null 2>&1; then
   echo "❌ User 'nestjs' not found. Creating user..."
   adduser -D -s /bin/sh nestjs || {
@@ -9,9 +14,6 @@ if ! id "nestjs" >/dev/null 2>&1; then
     exit 1
   }
 fi
-
-echo "Generating Prisma client..."
-npx prisma generate
 
 echo "Applying schema migrations..."
 # prisma migrate deploy is idempotent and safe:

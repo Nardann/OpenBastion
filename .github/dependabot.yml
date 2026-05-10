@@ -1,0 +1,74 @@
+# Dependabot — security updates daily, version updates weekly, two ecosystems
+# (backend npm + frontend npm) plus Docker base images and GitHub Actions.
+#
+# Security advisories with high/critical severity raise PRs immediately
+# regardless of the schedule.
+
+version: 2
+updates:
+  # Backend (NestJS)
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - backend
+    groups:
+      nest:
+        patterns:
+          - '@nestjs/*'
+      dev-deps:
+        dependency-type: development
+
+  # Frontend (Vite + React)
+  - package-ecosystem: npm
+    directory: '/client'
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - frontend
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - '@types/react*'
+      dev-deps:
+        dependency-type: development
+
+  # Container base images (Dockerfile.backend, Dockerfile.guacd, client/Dockerfile.frontend)
+  - package-ecosystem: docker
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - docker
+
+  - package-ecosystem: docker
+    directory: '/client'
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - docker
+
+  # GitHub Actions versions (the security workflow above)
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci

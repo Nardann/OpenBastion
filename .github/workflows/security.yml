@@ -1,0 +1,122 @@
+name: security
+
+# Hard security gate: run on every PR + nightly so a freshly-disclosed CVE
+# in a transitive dep can't sit unfixed in main for weeks.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  schedule:
+    - cron: '0 4 * * *' # daily at 04:00 UTC
+
+permissions:
+  contents: read
+  security-events: write # for code-scanning upload (Semgrep)
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # 1. npm audit — blocks PRs that introduce *high* or *critical* CVEs
+  # ──────────────────────────────────────────────────────────────────────
+  npm-audit:
+    name: npm audit (${{ matrix.scope }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: backend
+            workdir: '.'
+            audit_args: '--omit=dev'
+          - scope: frontend
+            workdir: 'client'
+            audit_args: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.workdir }}/package-lock.json
+      - name: Install (lockfile-only, no scripts)
+        working-directory: ${{ matrix.workdir }}
+        run: npm ci --ignore-scripts
+      - name: Audit (high+critical)
+        working-directory: ${{ matrix.workdir }}
+        run: npm audit ${{ matrix.audit_args }} --audit-level=high
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 2. Semgrep — SAST. Runs OWASP rules + Node + JWT + secret scan.
+  # ──────────────────────────────────────────────────────────────────────
+  semgrep:
+    name: semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          semgrep \
+            --config=p/owasp-top-ten \
+            --config=p/javascript \
+            --config=p/typescript \
+            --config=p/nodejs \
+            --config=p/jwt \
+            --config=p/secrets \
+            --error \
+            --severity=ERROR \
+            --severity=WARNING \
+            --metrics=off \
+            --sarif --output=semgrep.sarif \
+            src
+        continue-on-error: true
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 3. Secret scanning — gitleaks (defence in depth alongside GitHub's
+  #    own push-protection).
+  # ──────────────────────────────────────────────────────────────────────
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 4. Project unit + spec tests — auth flows, vault, refresh rotation,
+  #    revoke cascading. Acts as a regression gate for the security fixes.
+  # ──────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: jest (security suites)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci --ignore-scripts
+      - run: npx prisma generate
+      - name: Run security-critical specs
+        run: |
+          npx jest \
+            src/auth/refresh-token.service.spec.ts \
+            src/users/revoke-tokens.spec.ts \
+            src/auth/auth.service.spec.ts \
+            src/auth/token-blacklist.service.spec.ts \
+            src/auth/otp-lockout.service.spec.ts \
+            src/common/utils/security.spec.ts \
+            src/common/config/cors.config.spec.ts

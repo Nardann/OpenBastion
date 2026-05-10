@@ -15,6 +15,7 @@ describe('AuthService', () => {
   const mockUsersService = {
     findOneByEmail: jest.fn(),
     findOneByUsername: jest.fn(),
+    findOneByEmailOrUsername: jest.fn(),
     findOneById: jest.fn(),
     update: jest.fn(),
   };
@@ -79,7 +80,7 @@ describe('AuthService', () => {
       const password = 'password123';
       const hash = await argon2.hash(password);
       const user = { id: 'u1', email: 'test@local.com', passwordHash: hash, authMethod: AuthMethod.LOCAL };
-      mockUsersService.findOneByEmail.mockResolvedValue(user);
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValue(user);
 
       const result = await service.validateUser(user.email, password, AuthMethod.LOCAL);
       expect(result).toBeDefined();
@@ -89,7 +90,7 @@ describe('AuthService', () => {
 
     it('should return null for wrong password', async () => {
       const user = { id: 'u1', email: 'test@local.com', passwordHash: await argon2.hash('correct'), authMethod: AuthMethod.LOCAL };
-      mockUsersService.findOneByEmail.mockResolvedValue(user);
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValue(user);
       const result = await service.validateUser(user.email, 'wrong', AuthMethod.LOCAL);
       expect(result).toBeNull();
     });
@@ -99,6 +100,65 @@ describe('AuthService', () => {
       const result = await service.validateUser('ldap@test.com', 'pass', AuthMethod.LDAP);
       expect(mockLdapService.authenticate).toHaveBeenCalledWith('ldap@test.com', 'pass');
       expect(result).toBeDefined();
+    });
+
+    // SECURITY: anti-enumeration — both code paths must take time in the
+    // argon2 ballpark (wall-clock ≥ ~5 ms even on fast hardware) so the
+    // network observer cannot tell whether the identifier exists.
+    it('non-existing user path takes argon2-bounded time (≥ 5 ms)', async () => {
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValue(null);
+
+      // Warm dummy hash (lazy on first miss)
+      await service.validateUser('warmup@nope.com', 'pw', AuthMethod.LOCAL);
+
+      const t0 = Date.now();
+      const result = await service.validateUser('nope@nope.com', 'pw', AuthMethod.LOCAL);
+      const elapsed = Date.now() - t0;
+
+      expect(result).toBeNull();
+      expect(elapsed).toBeGreaterThanOrEqual(5);
+    });
+
+    it('non-LOCAL user path also runs the dummy verify (≥ 5 ms)', async () => {
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValueOnce(null);
+      await service.validateUser('warmup2@nope.com', 'pw', AuthMethod.LOCAL); // warm
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValue({
+        id: 'u1', email: 'oidc@test.com', authMethod: AuthMethod.OIDC, passwordHash: null,
+      });
+      const t0 = Date.now();
+      const result = await service.validateUser('oidc@test.com', 'pw', AuthMethod.LOCAL);
+      const elapsed = Date.now() - t0;
+      expect(result).toBeNull();
+      expect(elapsed).toBeGreaterThanOrEqual(5);
+    });
+
+    it('should have comparable timing for existing-wrong-pw vs non-existing user', async () => {
+      const user = {
+        id: 'u1', email: 'test@local.com',
+        passwordHash: await argon2.hash('correct'),
+        authMethod: AuthMethod.LOCAL,
+      };
+
+      // Warm the dummy hash (lazily generated on first miss) before measuring.
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValueOnce(null);
+      await service.validateUser('warmup@nope.com', 'pw', AuthMethod.LOCAL);
+
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValue(user);
+      const t0a = Date.now();
+      await service.validateUser(user.email, 'wrong', AuthMethod.LOCAL);
+      const dExisting = Date.now() - t0a;
+
+      mockUsersService.findOneByEmailOrUsername.mockResolvedValue(null);
+      const t0b = Date.now();
+      await service.validateUser('nope@nope.com', 'pw', AuthMethod.LOCAL);
+      const dMissing = Date.now() - t0b;
+
+      // Both should be in the argon2 ballpark (≥ 5ms even on fast HW).
+      expect(dExisting).toBeGreaterThanOrEqual(5);
+      expect(dMissing).toBeGreaterThanOrEqual(5);
+      // And within a 5x factor — argon2 dominates, the DB call delta is tiny.
+      const ratio = Math.max(dExisting, dMissing) / Math.max(1, Math.min(dExisting, dMissing));
+      expect(ratio).toBeLessThan(5);
     });
   });
 
