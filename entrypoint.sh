@@ -15,11 +15,29 @@ if ! id "nestjs" >/dev/null 2>&1; then
   }
 fi
 
+# ── Baseline an existing schema if needed ─────────────────────────────────
+# When the DB was originally created with `prisma db push` (no migration
+# history table) and we later switched to `prisma migrate deploy`, the
+# first deploy fails with P3005 ("database schema is not empty"). We detect
+# the missing _prisma_migrations table and mark the existing migrations as
+# "applied" without re-running them. This keeps user data intact.
+echo "Checking migration history baseline..."
+NEEDS_BASELINE=$(npx --yes prisma migrate status 2>&1 || true)
+if echo "$NEEDS_BASELINE" | grep -qE "P3005|database schema is not empty|_prisma_migrations.*does not exist"; then
+  echo "⚠ Existing schema without migration history detected — baselining."
+  for m in prisma/migrations/*/ ; do
+    name=$(basename "$m")
+    [ "$name" = "*" ] && continue # no migrations dir entries
+    echo "  → marking $name as applied"
+    npx --yes prisma migrate resolve --applied "$name" || true
+  done
+fi
+
 echo "Applying schema migrations..."
 # prisma migrate deploy is idempotent and safe:
-# - Fresh DB  : creates _prisma_migrations, applies 0001_init (IF NOT EXISTS SQL → no-op on existing tables)
-# - Existing DB (upgraded from db push): same — IF NOT EXISTS means no data loss ever
-# - Subsequent restarts: 0001_init already recorded → skipped; only new migrations are applied
+# - Fresh DB  : creates _prisma_migrations, applies 0001_init
+# - Existing DB freshly baselined (above): no-op
+# - Subsequent restarts: only new migrations are applied
 npx prisma migrate deploy
 
 echo "Starting NestJS application..."

@@ -111,7 +111,9 @@ services:
     tmpfs:
       - /tmp:size=64m,noexec,nosuid
       - /root/.npm:size=64m,noexec,nosuid
+      - /root/.cache:size=32m,noexec,nosuid
       - /home/nestjs/.npm:size=64m,noexec,nosuid
+      - /home/nestjs/.cache:size=32m,noexec,nosuid
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -145,7 +147,11 @@ services:
     environment:
       BACKEND_PORT: ${BACKEND_PORT:-3000}
     volumes:
-      - ./certs:/etc/nginx/ssl:ro
+      # NOTE: rw (not :ro) because the frontend entrypoint can fall back to
+      # generating a self-signed cert at boot if certs/server.{crt,key} are
+      # missing. Host-side permissions (700 on certs/, 600 on the key) are
+      # what actually protect the material — see scripts/harden-perms.sh.
+      - ./certs:/etc/nginx/ssl
     # SECURITY: nginx needs CHOWN/SETUID/SETGID to drop privileges to the
     # `nginx` worker user; everything else is dropped.
     cap_drop:
