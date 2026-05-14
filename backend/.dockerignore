@@ -1,0 +1,24 @@
+# Backend build context is `./backend`. Everything outside is invisible to
+# the Docker daemon, so we only need to exclude things INSIDE `./backend`.
+
+# Secrets / runtime state — should never end up here anyway, but guard.
+.env
+.env.*
+
+# VCS / IDE
+.git
+.gitignore
+.vscode
+*.log
+
+# Build artefacts (the Dockerfile rebuilds them from sources)
+node_modules
+dist
+coverage
+
+# Tests don't belong in the runtime image
+test
+
+# Local Prisma engine binaries downloaded on dev machines
+.prisma
+generated/prisma

@@ -169,34 +169,45 @@ between them.
 
 ## Development
 
+The codebase is split into two top-level workspaces:
+
+| Path | Stack | Build context |
+|---|---|---|
+| `backend/` | NestJS + Prisma + PostgreSQL | `./backend` |
+| `client/`  | React 19 + Vite | `./client` |
+
 ```bash
 # Backend (NestJS + Prisma)
+cd backend
 npm install
 npx prisma generate
 npm run start:dev      # http://localhost:3000
 
 # Frontend (Vite + React)
-cd client
+cd ../client
 npm install --legacy-peer-deps
 npm run dev            # https://localhost:5173
 
-# Run the security test suite
+# Run the security test suite (from backend/)
+cd ../backend
 npx jest src/auth src/users src/common
 ```
 
-A live database is required — start just the Postgres container with
-`docker compose up postgres -d`.
+A live database is required — start just the Postgres container from the
+repo root with `docker compose up postgres -d`.
 
 ### Database migrations
 
-Migrations live in `prisma/migrations/`. To author a new one:
+Migrations live in `backend/prisma/migrations/`. To author a new one:
 
 ```bash
+cd backend
 npx prisma migrate dev --name your_change
 ```
 
 The backend runs `prisma migrate deploy` at boot, so simply rebuilding the
-image picks up the migration in any environment.
+image picks up the migration in any environment. Ad-hoc init SQL for fresh
+Postgres clusters lives in `backend/scripts/init-db/`.
 
 ---
 

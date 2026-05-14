@@ -6,9 +6,9 @@
 
 version: 2
 updates:
-  # Backend (NestJS)
+  # Backend (NestJS) — lives in /backend
   - package-ecosystem: npm
-    directory: '/'
+    directory: '/backend'
     schedule:
       interval: weekly
       day: monday
@@ -44,9 +44,10 @@ updates:
       dev-deps:
         dependency-type: development
 
-  # Container base images (Dockerfile.backend, Dockerfile.guacd, client/Dockerfile.frontend)
+  # Container base images:
+  #   backend/Dockerfile, backend/Dockerfile.guacd, client/Dockerfile.frontend
   - package-ecosystem: docker
-    directory: '/'
+    directory: '/backend'
     schedule:
       interval: weekly
       day: monday
