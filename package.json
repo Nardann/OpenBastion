@@ -37,7 +37,7 @@
     "class-transformer": "0.5.1",
     "class-validator": "0.15.1",
     "helmet": "8.1.0",
-    "openid-client": "^6.8.3",
+    "openid-client": "^6.8.4",
     "ldapauth-fork": "6.1.0",
     "qrcode": "^1.5.4",
     "reflect-metadata": "0.2.2",
