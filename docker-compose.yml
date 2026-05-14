@@ -17,7 +17,7 @@ services:
       PGDATA: /var/lib/postgresql/data_v17
     volumes:
       - ./pg_data:/var/lib/postgresql
-      - ./scripts/init-db:/docker-entrypoint-initdb.d
+      - ./backend/scripts/init-db:/docker-entrypoint-initdb.d
     # SECURITY: drop every Linux capability except those Postgres needs for
     # its own setuid (CHOWN/SETUID/SETGID/DAC_READ_SEARCH/DAC_OVERRIDE/FOWNER
     # are needed because the entrypoint chowns PGDATA at boot).
@@ -42,7 +42,7 @@ services:
 
   guacd:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile.guacd
     container_name: bastion-guacd
     restart: always
@@ -72,8 +72,8 @@ services:
 
   backend:
     build:
-      context: .
-      dockerfile: Dockerfile.backend
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: bastion-backend
     restart: always
     networks:

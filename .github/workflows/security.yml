@@ -30,7 +30,7 @@ jobs:
       matrix:
         include:
           - scope: backend
-            workdir: '.'
+            workdir: 'backend'
             audit_args: '--omit=dev'
             install_args: ''
           - scope: frontend
@@ -85,7 +85,7 @@ jobs:
             --severity=WARNING \
             --metrics=off \
             --sarif --output=semgrep.sarif \
-            src
+            backend/src client/src
         continue-on-error: true
       - name: Upload SARIF to GitHub code scanning
         if: always()
@@ -115,12 +115,16 @@ jobs:
   unit-tests:
     name: jest (security suites)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
       - run: npm ci --ignore-scripts || npm install --no-save --ignore-scripts
       - run: npx prisma generate
       - name: Run security-critical specs

@@ -2,7 +2,7 @@
 set -e
 
 # SECURITY: the runtime image is read-only (compose: read_only:true). The
-# Prisma client was generated at BUILD time (Dockerfile.backend stage 1)
+# Prisma client was generated at BUILD time (backend/Dockerfile stage 1)
 # and shipped inside /app/node_modules/.prisma — there is nothing to
 # regenerate at boot. We only run `migrate deploy` which is read-only on
 # the filesystem (it just talks to Postgres).

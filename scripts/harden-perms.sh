@@ -8,7 +8,7 @@
 #   - certs/server.key → 600 (TLS private key)
 #   - certs/server.crt → 644 (TLS public cert)
 #   - certs/           → 700 (parent dir not world-traversable)
-#   - pg_data*/        → 700 (Postgres data dir)
+#   - pg_data/         → 700 owned by Postgres uid (70)
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -37,19 +37,17 @@ if [ -d certs ]; then
 fi
 
 # Postgres-alpine runs as UID 70 (postgres user inside the container).
-# The pg_data dirs must be owned by that UID so the container can read/write,
+# The pg_data dir must be owned by that UID so the container can read/write,
 # while still being inaccessible to other host users. Mode 0700 + owner 70:70.
 PG_UID=70
 PG_GID=70
-for d in pg_data pg_data_new; do
-  if [ -d "$d" ]; then
-    chown -R "${PG_UID}:${PG_GID}" "$d"
-    chmod 700 "$d"
-    [ -d "$d/data"     ] && chmod 700 "$d/data"
-    [ -d "$d/data_v17" ] && chmod 700 "$d/data_v17"
-    echo "✓ $d/ tightened (owner=${PG_UID}:${PG_GID}, mode=700)"
-  fi
-done
+if [ -d pg_data ]; then
+  chown -R "${PG_UID}:${PG_GID}" pg_data
+  chmod 700 pg_data
+  [ -d pg_data/data     ] && chmod 700 pg_data/data
+  [ -d pg_data/data_v17 ] && chmod 700 pg_data/data_v17
+  echo "✓ pg_data/ tightened (owner=${PG_UID}:${PG_GID}, mode=700)"
+fi
 
 echo
 echo "Done. Verify with:"

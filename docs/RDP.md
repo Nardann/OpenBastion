@@ -50,7 +50,7 @@ docker compose build guacd
 docker compose up -d guacd
 ```
 
-L'image est produite depuis `Dockerfile.guacd` (multi-stage Debian
+L'image est produite depuis `backend/Dockerfile.guacd` (multi-stage Debian
 `bookworm-slim`) avec `./configure --with-rdp --without-ssh --without-vnc
 --without-telnet --without-kubernetes --disable-guacenc --disable-guaclog`.
 Poids ≈ 85 Mo, RAM au repos ≈ 8-15 Mo.
@@ -161,7 +161,7 @@ Backend :
 - `src/common/dto/security.dto.ts` — champs RDP + `@ValidateIf` SSH-only
 
 Infra :
-- `Dockerfile.guacd` — image custom minimale
+- `backend/Dockerfile.guacd` — image custom minimale
 - `docker-compose.yml` — service `guacd`, env `GUACD_HOST/PORT`, depends_on
 - `prisma/schema.prisma` — enum `RdpSecurity`, champs `Machine`, `sshFingerprint?`
 - `scripts/init-db/init.sql` — schéma initial mis à jour

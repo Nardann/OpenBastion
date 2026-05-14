@@ -1,30 +1,31 @@
-# SECURITY: do NOT ship secrets, DB data or worktrees inside image build contexts.
+# Root .dockerignore — applies to the FRONTEND build context (`.`).
+# The backend build context lives at `./backend` and has its own
+# `backend/.dockerignore`.
+
+# Secrets / runtime state
 .env
 .env.*
+
+# VCS / IDE / agent state
 .git
 .gitignore
 .claude
 .vscode
 *.log
 
-# Postgres data (host-mounted as a volume)
-pg_data
-pg_data_new
+# Backend code (built by a separate Dockerfile with its own context)
+backend
 
-# TLS material (host-mounted as a volume)
+# Host-mounted volumes — never ship them inside an image
+pg_data
 certs
 
-# Frontend artifacts (frontend image has its own context)
+# Build artefacts
 client/node_modules
 client/dist
-
-# Build / runtime artifacts
-node_modules
-dist
 coverage
 
-# Docs / dev-only files
+# Docs & dev-only files
 README.md
 docs
-test
 VALIDATION_CHECKLIST.md

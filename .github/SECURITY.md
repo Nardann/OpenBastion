@@ -37,8 +37,8 @@ In scope:
   audit, recordings.
 - Frontend (`client/`) — XSS, CSRF, exposed endpoints.
 - Default `docker-compose.yml` deployment topology.
-- Container images built from this repo (`Dockerfile.backend`,
-  `Dockerfile.guacd`, `client/Dockerfile.frontend`).
+- Container images built from this repo (`backend/Dockerfile`,
+  `backend/Dockerfile.guacd`, `client/Dockerfile.frontend`).
 - `nginx.conf` and `scripts/harden-perms.sh`.
 
 Out of scope:
