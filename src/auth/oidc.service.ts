@@ -154,30 +154,37 @@ export class OidcService {
   }
 
   /**
-   * SECURITY (CodeQL js/disabling-certificate-validation, dev-only path):
+   * SECURITY (CodeQL js/disabling-certificate-validation +
+   * Semgrep bypass-tls-verification, both intentional):
    *
    * This function returns a fetch wrapper that disables TLS verification.
    * That is unsafe in any production context, so the call site is gated
-   * twice already:
+   * three times:
    *   1. `allowsInsecureTls()` requires both `OIDC_ALLOW_INSECURE_TLS=true`
    *      AND a loopback issuer (`localhost` / `127.0.0.1` / `::1`).
    *   2. This wrapper applies the insecure agent ONLY when the requested
    *      URL itself is also loopback. A malicious metadata document
    *      returned by a loopback IdP that points `token_endpoint` at
-   *      `https://attacker.com/...` (post-discovery vector) would fall
-   *      through to the standard `globalThis.fetch`, where Node's default
-   *      certificate validation kicks back in.
+   *      `https://attacker.com/...` falls through to `globalThis.fetch`,
+   *      where Node's default certificate validation kicks back in.
+   *   3. F-03's discovery-endpoint validator rejects any metadata that
+   *      points endpoints at internal addresses BEFORE caching, so the
+   *      insecure agent never sees a SSRF-style payload at all.
    *
    * The literal `rejectUnauthorized: false` is flagged by
-   * `js/disabling-certificate-validation` — we accept that finding because
-   * it is the entire purpose of this opt-in dev helper. The suppression
-   * below documents the rationale; do not remove it without revisiting
-   * the guards above.
+   * `js/disabling-certificate-validation` (CodeQL) and
+   * `problem-based-packs.insecure-transport.js-node.bypass-tls-verification`
+   * (Semgrep). We accept both findings because it is the entire purpose
+   * of this opt-in dev helper. Do not remove the suppressions without
+   * revisiting the guards above.
    */
   // codeql[js/disabling-certificate-validation]
   // lgtm[js/disabling-certificate-validation]
+  // nosemgrep: bypass-tls-verification
   private buildInsecureFetch(): typeof fetch {
-    const insecureAgent = new https.Agent({ rejectUnauthorized: false }); // codeql[js/disabling-certificate-validation]
+    // codeql[js/disabling-certificate-validation]
+    // nosemgrep: bypass-tls-verification
+    const insecureAgent = new https.Agent({ rejectUnauthorized: false }); // codeql[js/disabling-certificate-validation] nosemgrep
     const isLoopbackUrl = (u: string): boolean => {
       try {
         return this.isLoopbackOnlyHost(new URL(u).hostname);
