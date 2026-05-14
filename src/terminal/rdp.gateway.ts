@@ -55,12 +55,19 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     {
       socket: net.Socket;
       machineId: string;
+      userId: string;
       startTime: Date;
       timeoutId: NodeJS.Timeout;
       inactivityTimer: NodeJS.Timeout;
+      // F-02: poll RBAC every 30s independently of incoming traffic so a
+      // user whose access is revoked stops receiving frames even when no
+      // input event arrives (RDP streams are mostly server→client).
+      accessPoll: NodeJS.Timeout;
       accessCache?: { allowed: boolean; lastChecked: number };
     }
   >();
+  // SECURITY (F-02)
+  private readonly RBAC_POLL_INTERVAL_MS = 30_000;
   private userSessions = new Map<string, number>();
   private connectionAttempts = new Map<
     string,
@@ -164,6 +171,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (session) {
       clearTimeout(session.timeoutId);
       clearTimeout(session.inactivityTimer);
+      clearInterval(session.accessPoll); // F-02
       const duration = Math.round(
         (Date.now() - session.startTime.getTime()) / 1000,
       );
@@ -257,12 +265,44 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         4 * 60 * 60 * 1000,
       ); // 4h
 
+      // SECURITY (F-02): periodic RBAC re-check, same rationale as the
+      // SSH gateway. RDP is even more affected because the client mostly
+      // observes (mouse + keyboard input is sparse); without this poll a
+      // revoked viewer keeps watching the desktop indefinitely.
+      const accessPoll = setInterval(async () => {
+        const session = this.sessions.get(client.id);
+        if (!session) return;
+        try {
+          const stillAllowed = await this.rbacService.hasAccess(
+            user.sub,
+            session.machineId,
+            AccessLevel.OPERATOR,
+          );
+          session.accessCache = { allowed: stillAllowed, lastChecked: Date.now() };
+          if (!stillAllowed) {
+            this.logger.warn(
+              `RBAC revocation detected for RDP user=${user.sub} machine=${session.machineId} — closing session`,
+            );
+            client.emit('error', 'Access revoked');
+            session.socket.destroy();
+            this.sessions.delete(client.id);
+            client.disconnect();
+          }
+        } catch (e) {
+          this.logger.warn(
+            `RDP RBAC poll failed (transient): ${(e as Error).message}`,
+          );
+        }
+      }, this.RBAC_POLL_INTERVAL_MS);
+
       this.sessions.set(client.id, {
         socket,
         machineId: data.machineId,
+        userId: user.sub,
         startTime: new Date(),
         timeoutId,
         inactivityTimer: this.createInactivityTimer(client),
+        accessPoll,
       });
 
       await this.auditService.logAction(
@@ -350,6 +390,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     if (!isAllowed) {
       client.emit('error', 'Access revoked');
+      clearInterval(session.accessPoll); // F-02
       session.socket.destroy();
       this.sessions.delete(client.id);
       client.disconnect();

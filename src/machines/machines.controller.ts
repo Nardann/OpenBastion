@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import * as net from 'node:net';
 import * as dns from 'node:dns/promises';
+import * as ipaddr from 'ipaddr.js';
 import { SkipThrottle } from '@nestjs/throttler';
 import { MachinesService } from './machines.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -142,32 +143,55 @@ export class MachinesController {
     }
   }
 
+  /**
+   * SECURITY (F-05 fix): canonicalise the address through `ipaddr.js`
+   * before classification, so that all equivalent representations of the
+   * same destination map to the same answer:
+   *
+   *   ::ffff:127.0.0.1   →  loopback
+   *   ::ffff:7f00:1      →  loopback   (was a bypass before this fix —
+   *                                     the old hand-rolled regex only
+   *                                     accepted decimal-dotted form)
+   *   2002:7f00:1::      →  6to4 wrapping a private IPv4
+   *   ::1                →  loopback
+   *
+   * `range()` returns a category like 'unicast', 'loopback', 'private',
+   * 'linkLocal', 'uniqueLocal', 'multicast', 'reserved', etc. We block
+   * everything that isn't a public unicast, with one extra rule for AWS
+   * metadata (169.254.169.254) which is reported as 'linkLocal' by
+   * ipaddr.js — already covered.
+   */
   private isPrivateOrReservedIp(ip: string): boolean {
-    if (net.isIPv4(ip)) {
-      const parts = ip.split('.').map(Number);
-      const [a, b] = parts;
-      if (a === 10) return true;                          // 10.0.0.0/8
-      if (a === 127) return true;                         // 127.0.0.0/8 loopback
-      if (a === 169 && b === 254) return true;            // 169.254.0.0/16 link-local + AWS metadata
-      if (a === 172 && b! >= 16 && b! <= 31) return true; // 172.16.0.0/12
-      if (a === 192 && b === 168) return true;            // 192.168.0.0/16
-      if (a === 100 && b! >= 64 && b! <= 127) return true;// 100.64.0.0/10 CGNAT
-      if (a === 0) return true;                           // 0.0.0.0/8
-      if (a! >= 224) return true;                         // multicast + reserved
-      return false;
+    if (!ipaddr.isValid(ip)) return true; // unparseable → fail closed
+    let parsed: ipaddr.IPv4 | ipaddr.IPv6 = ipaddr.parse(ip);
+
+    // Unwrap IPv4-mapped IPv6 to the underlying IPv4 so the IPv4 ranges
+    // (RFC 1918, CGNAT, loopback) are consistently applied.
+    if (parsed.kind() === 'ipv6') {
+      const v6 = parsed as ipaddr.IPv6;
+      if (v6.isIPv4MappedAddress()) {
+        parsed = v6.toIPv4Address();
+      }
     }
-    if (net.isIPv6(ip)) {
-      const lower = ip.toLowerCase();
-      if (lower === '::1' || lower === '::') return true;
-      if (lower.startsWith('fe80:')) return true;          // link-local
-      if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // unique local
-      if (lower.startsWith('ff')) return true;             // multicast
-      // IPv4-mapped IPv6 like ::ffff:127.0.0.1
-      const m = lower.match(/^::ffff:([0-9.]+)$/);
-      if (m && net.isIPv4(m[1]!)) return this.isPrivateOrReservedIp(m[1]!);
-      return false;
-    }
-    return true;
+
+    const range = parsed.range(); // string label
+    const blockedRanges = new Set<string>([
+      'unspecified',     // 0.0.0.0 / ::
+      'broadcast',       // 255.255.255.255
+      'multicast',       // 224.0.0.0/4 / ff00::/8
+      'linkLocal',       // 169.254/16 / fe80::/10  (incl. AWS metadata)
+      'loopback',        // 127/8 / ::1
+      'carrierGradeNat', // 100.64/10
+      'private',         // 10/8, 172.16/12, 192.168/16
+      'uniqueLocal',     // fc00::/7
+      'ipv4Mapped',      // ::ffff:0:0/96 (should already be unwrapped)
+      'rfc6145',         // 64:ff9b::/96
+      'rfc6052',         // 64:ff9b::/96 alias
+      '6to4',            // 2002::/16
+      'teredo',          // 2001::/32
+      'reserved',        // misc reserved blocks
+    ]);
+    return blockedRanges.has(range);
   }
 
   @Patch(':id')

@@ -1,36 +1,28 @@
-import { Injectable, ExecutionContext } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import {
-  THROTTLE_USER_TTL,
-  THROTTLE_USER_LIMIT_ADMIN,
-  THROTTLE_USER_LIMIT_USER,
-  THROTTLE_USER_LIMIT_ANON,
-} from '../constants/security.constants';
 
 /**
- * Throttles by authenticated userId when a JWT is present,
- * falling back to IP for anonymous requests.
+ * Custom throttler guard.
+ *
+ * SECURITY (F-01 fix): we override ONLY `getTracker` so that requests are
+ * counted per authenticated user (when a JWT is present) rather than just
+ * by IP — that lets us cap user actions even behind a NAT/CGNAT.
+ *
+ * We deliberately DO NOT override `getThrottlers` anymore. The previous
+ * implementation returned only the `user` throttler, which silently
+ * neutralised every per-route `@Throttle({ auth: { ... } })` decorator
+ * on login / login-otp / sudo / oidc / refresh / otp endpoints. The
+ * intended `THROTTLE_AUTH_LIMIT=20 / 15 min` was never enforced — brute
+ * force was capped only by the much looser anonymous user throttle
+ * (~30/min). Letting the parent `getThrottlers` resolve the active set
+ * from `ThrottlerModule.forRoot([...])` + the route-level `@Throttle`
+ * metadata restores the declarative behaviour intended by the auth
+ * controller.
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(req: Record<string, any>): Promise<string> {
     const userId: string | undefined = req.user?.sub;
     return userId ?? req.ip ?? 'unknown';
-  }
-
-  protected getThrottlers(context: ExecutionContext) {
-    const req = context.switchToHttp().getRequest();
-    const role: string | undefined = req.user?.role;
-
-    const limit =
-      role === 'ADMIN'
-        ? THROTTLE_USER_LIMIT_ADMIN
-        : role === 'USER'
-          ? THROTTLE_USER_LIMIT_USER
-          : THROTTLE_USER_LIMIT_ANON;
-
-    return Promise.resolve([
-      { name: 'user', ttl: THROTTLE_USER_TTL, limit },
-    ]);
   }
 }
