@@ -30,6 +30,21 @@ type CorsDelegate = (
 function parseAllowedOrigins(): string[] {
   const env = process.env.NODE_ENV || 'development';
 
+  // SECURITY: HTTPS-only policy. Any `http://` entry in CORS_ALLOWED_ORIGINS
+  // is silently dropped (and logged) — the bastion never accepts requests
+  // from plaintext origins, even in development. A self-signed cert is fine;
+  // unencrypted transport is not.
+  const stripHttp = (origin: string): boolean => {
+    if (origin.startsWith('http://')) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `CORS: dropping plaintext-HTTP origin from allowlist: ${origin}`,
+      );
+      return false;
+    }
+    return true;
+  };
+
   if (env === 'production') {
     const configured = process.env.CORS_ALLOWED_ORIGINS || '';
     if (!configured) {
@@ -43,23 +58,20 @@ function parseAllowedOrigins(): string[] {
     return configured
       .split(',')
       .map((o) => o.trim())
-      .filter((o) => o.length > 0);
+      .filter((o) => o.length > 0)
+      .filter(stripHttp);
   }
 
-  // Development defaults
+  // Development defaults — HTTPS only. The bastion's own nginx serves
+  // HTTPS on 443 with a self-signed cert at install time; access it
+  // through that, not through some http://localhost:3000 dev server.
   return [
-    'http://localhost',
     'https://localhost',
-    'http://localhost:3000',
-    'https://localhost:3000',
-    'http://localhost:80',
-    'http://localhost:8080',
     'https://localhost:443',
-    'http://127.0.0.1',
+    'https://localhost:3000',
     'https://127.0.0.1',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:80',
-    'http://127.0.0.1:8080',
+    'https://127.0.0.1:443',
+    'https://127.0.0.1:3000',
   ];
 }
 
@@ -100,6 +112,19 @@ export function getCorsConfig(): CorsDelegate {
     // middleware in main.ts gate POST/PATCH/DELETE.
     if (!origin) {
       callback(null, { ...baseOptions, origin: true });
+      return;
+    }
+
+    // SECURITY: refuse any plaintext-HTTP origin outright, regardless of
+    // whether it would otherwise match the same-origin auto-allow or the
+    // env whitelist. We do not accept requests from unencrypted transports.
+    if (origin.startsWith('http://')) {
+      // eslint-disable-next-line no-console
+      console.warn(`CORS rejected plaintext-HTTP origin: ${origin}`);
+      callback(
+        new Error(`Plaintext HTTP origin not allowed: ${origin}`),
+        { ...baseOptions, origin: false },
+      );
       return;
     }
 

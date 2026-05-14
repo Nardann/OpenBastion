@@ -80,6 +80,29 @@ describe('CorsConfig', () => {
     expect(err).toBeInstanceOf(Error);
   });
 
+  it('SECURITY: plaintext-HTTP Origin is REJECTED even when same-host', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ALLOWED_ORIGINS = '';
+    // Same host as Host header — would normally pass same-origin auto-allow,
+    // but the scheme is http:// so we must reject.
+    const { err } = await callDelegate({
+      headers: { origin: 'http://my-bastion.local', host: 'my-bastion.local' },
+    });
+    expect(err).toBeInstanceOf(Error);
+    expect(err?.message).toMatch(/plaintext HTTP/i);
+  });
+
+  it('SECURITY: plaintext-HTTP origin is REJECTED even when whitelisted', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ALLOWED_ORIGINS = 'http://oops.example.com';
+    // Even if an operator misconfigures the env to include an http:// URL,
+    // the CORS layer drops it (and logs a warning at parse time + reject at runtime).
+    const { err } = await callDelegate({
+      headers: { origin: 'http://oops.example.com', host: 'bastion.example.com' },
+    });
+    expect(err).toBeInstanceOf(Error);
+  });
+
   it('production with empty CORS_ALLOWED_ORIGINS still serves same-origin', async () => {
     process.env.NODE_ENV = 'production';
     process.env.CORS_ALLOWED_ORIGINS = '';

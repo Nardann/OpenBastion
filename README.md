@@ -1,259 +1,258 @@
 # OpenBastion
 
-A modern and sovereign Bastion/PAM (Privileged Access Management) system written in Node.js and React.
+> A modern, self-hosted Privileged Access Management (PAM) gateway for SSH and RDP.
+> Brokers terminal and remote-desktop sessions to your infrastructure without ever
+> exposing the underlying credentials to your operators.
 
-## 🚀 Features
+[![security](https://github.com/Nardann/OpenBastion/actions/workflows/security.yml/badge.svg?branch=main)](.github/workflows/security.yml)
+![license](https://img.shields.io/badge/license-AGPL--3.0-blue)
+![status](https://img.shields.io/badge/status-beta-orange)
 
-- **Secure SSH Access** : Direct secure connection without exposing credentials.
-- **Remote Desktop (RDP)** : Optional RDP support for Windows systems (configurable via environment variables).
-- **Multi-Authentication** : Support for Local, LDAP/AD, and OIDC/SSO.
-- **Fine-grained Access Control** : RBAC binding users, groups, and machines with granular permission levels (READ, ACCESS, MANAGE).
-- **Machine Groups** : Organize and manage machines by logical groups for better resource organization.
-- **Two-Factor Authentication (2FA)** : OTP-based authentication for enhanced account security.
-- **User Profiles** : Manage personal information, security settings, and device sessions.
-- **Session Management** : Revoke all active sessions for compromised accounts.
-- **Audit & Traceability** : Complete immutable logs of all system activities with filtering and search.
-- **Admin Settings** : Centralized configuration including default language selection.
-- **Multi-Language Support** : Full internationalization (i18n) with French and English, configurable per user and globally.
-- **Advanced Security** : AES-256-GCM contextual encryption, Rate Limiting, Zero-Trust principles.
+---
 
-## 🛠️ Technical Stack
+## What it does
 
-- **Backend** : NestJS, Prisma ORM, PostgreSQL, SSH2, Guacamole (RDP).
-- **Frontend** : React 19, Vite 6, Tailwind CSS, xterm.js, Lucide icons.
-- **Database** : PostgreSQL with migrations via Prisma.
-- **Authentication** : Local, LDAP/AD integration, OpenID Connect (OIDC) SSO.
+OpenBastion sits between your operators and your servers. Instead of sharing SSH
+keys or RDP passwords across the team, you store target credentials once,
+encrypted, in OpenBastion's vault and let users connect through their browser.
+Every keystroke is recorded; every action is auditable.
 
-## 📦 Installation
+- 🔐 **SSH and RDP/VNC** sessions in the browser (xterm.js + Apache Guacamole)
+- 👥 **Local / LDAP-AD / OIDC** authentication with optional just-in-time
+      provisioning
+- 🧱 **RBAC** with three permission levels (Viewer / Operator / Owner), bound to
+      users, groups, machines and machine groups
+- 🛡️ **2FA (TOTP)** with anti-replay and brute-force lockout
+- 📼 **Session recordings** in asciinema format, with configurable retention
+      and SHA-256 integrity hashes
+- 📋 **Tamper-evident audit log** (HMAC-chained) covering every authentication
+      event, configuration change and session
+- 🌍 **French + English** UI, switchable per user
+- 🐳 **Docker-first** deployment, hardened by default
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/nardann/OpenBastion.git
-   cd OpenBastion
-   ```
+---
 
-2. **Configuration**
-   Create a `.env` file at the root (based on `.env.example`). At minimum, generate fresh secrets:
-   ```bash
-   echo "JWT_SECRET=$(openssl rand -hex 32)"     >> .env
-   echo "VAULT_KEY=$(openssl rand -hex 32)"      >> .env
-   echo "VAULT_SALT=$(openssl rand -hex 32)"     >> .env
-   echo "METRICS_TOKEN=$(openssl rand -hex 32)"  >> .env
-   ```
+## Quick start
 
-3. **Launch with Docker**
-   ```bash
-   sudo docker compose up -d --build
-   ```
+Requirements: Docker 24+ with Compose v2, `openssl`, `git`.
 
-4. **Tighten filesystem permissions** (critical, run once after first boot)
-   ```bash
-   sudo ./scripts/harden-perms.sh
-   ```
-   This sets `.env` to `600`, `certs/server.key` to `600`, and `pg_data/` to `700` owned by the Postgres uid (70). Without this, any local user on the host can read your TLS private key and DB secrets.
-
-5. **Access the application**
-   - Frontend: `https://localhost`
-   - Backend API: `https://localhost:${BACKEND_PORT}`
-   - Default admin account: `admin@bastion.local` / `${ADMIN_PASSWORD}`
-   - On first login the admin account is locked into a forced password rotation; only `/auth/me`, `/auth/change-password`, `/auth/refresh` and `/auth/logout` are reachable until you change the password.
-
-## 🚨 Production Deployment
-
-The default `docker-compose.yml` is hardened for self-hosted production but **a real prod deployment also needs**:
-
-### TLS certificate (required)
-
-The repo ships a self-signed cert in `certs/`. **Replace it before going public** — browsers will refuse OIDC redirects, SSO, and several security policies otherwise.
-
-Two options:
-
-**Option A — Let's Encrypt via Caddy / Traefik in front of the bastion**
-
-Put a reverse proxy on the public side. Caddy handles ACME automatically:
-```caddyfile
-bastion.example.com {
-    reverse_proxy localhost:443 {
-        transport http {
-            tls_insecure_skip_verify  # internal hop only
-        }
-    }
-}
-```
-
-**Option B — drop a real cert into `./certs/`**
 ```bash
-# Replace the self-signed pair with your CA-issued one
-cp /path/to/fullchain.pem certs/server.crt
-cp /path/to/privkey.pem  certs/server.key
-sudo chmod 644 certs/server.crt
-sudo chmod 600 certs/server.key
-sudo docker compose restart frontend
+git clone https://github.com/Nardann/OpenBastion.git
+cd OpenBastion
+
+# 1. Configure
+cp .env.example .env
+
+# Generate strong secrets (REQUIRED — do not skip)
+sed -i \
+  -e "s|^JWT_SECRET=.*|JWT_SECRET=\"$(openssl rand -hex 32)\"|"     \
+  -e "s|^VAULT_KEY=.*|VAULT_KEY=\"$(openssl rand -hex 32)\"|"        \
+  -e "s|^VAULT_SALT=.*|VAULT_SALT=\"$(openssl rand -hex 32)\"|"      \
+  -e "s|^METRICS_TOKEN=.*|METRICS_TOKEN=\"$(openssl rand -hex 32)\"|" \
+  .env
+
+# Pick an initial admin password (>= 16 chars, complex)
+$EDITOR .env # set ADMIN_PASSWORD
+
+# 2. Launch
+sudo docker compose up -d --build
+
+# 3. Tighten host permissions (one-off, after the first boot)
+sudo ./scripts/harden-perms.sh
 ```
 
-Then **re-run** `sudo ./scripts/harden-perms.sh` so permissions stay tight.
+Open <https://localhost> in your browser, accept the self-signed certificate
+warning, and sign in with `admin@bastion.local` + the `ADMIN_PASSWORD` you set.
+You will be asked to rotate the password immediately.
 
-### Prerequisites checklist
+> 💡 For a production deployment behind a public hostname, see
+> [docs/PRODUCTION.md](docs/PRODUCTION.md).
 
-Before exposing OpenBastion to a network you don't fully control:
+---
 
-- [ ] `NODE_ENV=production` in `.env` (not `development`).
-- [ ] All four secrets (`JWT_SECRET`, `VAULT_KEY`, `VAULT_SALT`, `METRICS_TOKEN`) regenerated with `openssl rand -hex 32`.
-- [ ] `ADMIN_PASSWORD` ≥ 16 chars with complexity, never reused.
-- [ ] `CORS_ALLOWED_ORIGINS` set to your public hostname only — the same-origin auto-detection covers all reachable hostnames/IPs without listing them.
-- [ ] `OIDC_ALLOW_INSECURE_TLS` left unset (or `false`).
-- [ ] `./scripts/harden-perms.sh` applied.
-- [ ] Real CA-issued TLS cert (see above).
-- [ ] WAF / reverse proxy with rate limiting (Caddy, nginx + ModSecurity, Cloudflare).
-- [ ] Postgres backups (see below) tested for restore.
-- [ ] `npm audit --audit-level=high` clean on `/` and `/client` (CI does this for every PR — see `.github/workflows/security.yml`).
-- [ ] OTP enforced on every ADMIN account.
-- [ ] Recording retention configured in **Administration > Settings > Recording retention**.
-- [ ] Independent penetration test scheduled before opening to real users.
+## How sessions work
 
-### Postgres backups
+1. An administrator adds a target machine (SSH or RDP/VNC) and stores its
+   credentials. They are encrypted with **AES-256-GCM** and never decryptable
+   from the API — only the session worker on the server side ever sees them.
+2. An operator with `OPERATOR` access opens a session from the web UI.
+3. The backend opens the SSH/RDP connection on the operator's behalf and pipes
+   it through a WebSocket. The operator's keystrokes and the server's output
+   stream through OpenBastion, which records them and re-checks authorisation
+   every 30 seconds.
+4. Revoking an operator's access closes their active session within ~30 s,
+   whether they were typing or just watching.
 
-The `pg_data/` directory contains everything: user accounts, encrypted machine credentials, recording metadata, audit log HMACs. Lose it and the bastion is unrecoverable; leak it and an attacker has the encrypted vault (still needs `VAULT_KEY` to decrypt — keep them on different storage).
+---
 
-Minimal nightly backup with verified restore:
-```bash
-# Inside a daily cron on the host
-docker exec bastion-postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
-  | gzip \
-  | gpg --encrypt -r ops@example.com \
-  > "/secure-backups/bastion-$(date +%F).sql.gz.gpg"
-```
+## Authentication
 
-Restore drill (run quarterly): spin up a fresh empty Postgres, decrypt + `psql -f`, point a staging backend at it, verify login + machine list. Never trust a backup you haven't restored.
+| Method | Use case |
+|---|---|
+| **Local** | Standalone deployments. Argon2id-hashed passwords, optional TOTP. |
+| **LDAP/AD** | Existing directory. `(uid=...)` or `(sAMAccountName=...)` filter, optional JIT provisioning. |
+| **OIDC** | Single sign-on with any RFC-compliant provider (Keycloak, Authentik, Authelia, Okta, Azure AD, Google...). PKCE + nonce + state. |
 
-### Why a secret manager (vs `.env` on disk)
+Configure providers from **Administration → Authentication**. Per-user TOTP
+can be enrolled from the user profile page.
 
-`.env` works for self-hosted single-node deployments. As soon as you have:
+---
 
-- multiple machines running OpenBastion,
-- a CI/CD pipeline that needs the same secrets,
-- audit requirements ("who fetched the JWT secret last week?"),
-- a key rotation policy,
+## Configuration
 
-…you outgrow `.env`. A secret manager (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager, Doppler, 1Password, Bitwarden) gives you:
+All configuration goes through environment variables — typically in `.env` at
+the repo root, picked up by `docker-compose.yml`.
 
-- **Centralised storage** — one source of truth, not 5 `.env` copies.
-- **Access logs** — every read is traceable.
-- **Rotation hooks** — secrets are versioned; you can rotate `VAULT_KEY` and roll out without scping files.
-- **Identity-based access** — services authenticate via short-lived tokens (AWS IAM, Vault AppRole) instead of a static file every developer can `cat`.
-- **Sealed at rest** — the secret manager holds master keys in an HSM you don't have to operate yourself.
+### Required
 
-Migration sketch from `.env` to (for example) AWS Secrets Manager:
-1. Push every value to `aws secretsmanager create-secret --name openbastion/prod`.
-2. At container start, fetch and `export` them via a wrapper:
-   ```sh
-   eval "$(aws secretsmanager get-secret-value --secret-id openbastion/prod \
-     --query SecretString --output text \
-     | jq -r 'to_entries[] | "export \(.key)=\(.value | @sh)"')"
-   exec /app/entrypoint.sh
-   ```
-3. Drop `JWT_SECRET=...` etc. from `docker-compose.yml`'s `environment:` block — they come from the wrapper now.
-4. Delete the `.env` from the host once verified.
+| Variable | Description |
+|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Database credentials |
+| `DATABASE_URL` | Built from the three above. |
+| `JWT_SECRET` | JWT signing secret. Generate with `openssl rand -hex 32`. |
+| `VAULT_KEY` | Master key for the secret vault. **Do not rotate without re-encrypting.** |
+| `VAULT_SALT` | HKDF salt for per-resource key derivation. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Initial admin account, created at first boot. Rotated on first login. |
+| `METRICS_TOKEN` | Bearer token guarding `/api/metrics`. Required in production. |
 
-## 📚 Key Features Explained
-
-### Multi-Language Support
-- Switch between French and English using the 🌍 globe icon in the top navigation bar.
-- Default language can be configured globally via **Administration > Settings > Default Language**.
-- User language preference is stored locally and persists across sessions.
-- All system messages, UI labels, and form placeholders are fully translated.
-
-### Access Control & Permissions
-Three permission levels for machines and groups:
-- **READ (VIEWER)** : View machine details only.
-- **ACCESS (OPERATOR)** : Execute sessions on machines.
-- **MANAGE (OWNER)** : Full management rights.
-
-### Authentication Methods
-- **Local** : Built-in user accounts with password and optional OTP.
-- **LDAP/AD** : Directory-based authentication with optional Just-In-Time (JIT) user provisioning.
-- **OIDC/SSO** : OpenID Connect for enterprise SSO integration with optional JIT provisioning.
-
-### Machine Management
-- Add and organize SSH and RDP machines.
-- Configure security settings (SSH fingerprint verification, RDP security modes).
-- Group machines by environment or purpose.
-- Control security features per machine (port forwarding, proxy/rebound, clipboard).
-
-### Admin Dashboard
-- Real-time system status monitoring.
-- Quick overview of users, machines, and audit logs.
-- Navigation to all administration sections.
-
-### Security & Audit
-- **Audit Logs** : Immutable record of all actions (authentication, machine access, configuration changes).
-- **Log Filtering** : Search and filter by category, user, action, and source IP.
-- **Session Management** : View and revoke active sessions.
-- **OTP Management** : Enable, disable, or reset 2FA for user accounts.
-
-## 🔐 Security Highlights
-
-- **Zero-Trust Architecture** : All access requires explicit authorization.
-- **Encryption** : AES-256-GCM for sensitive data in transit.
-- **Rate Limiting** : Protection against brute-force attacks.
-- **SSH Fingerprint Verification** : Validate server identity before connecting.
-- **Isolated Sessions** : Each session runs in isolation with keyboard/clipboard controls.
-- **Audit Trail** : Complete, immutable logging of all administrative and user actions.
-
-## 🌍 Supported Languages
-
-- **Français** (French)
-- **English**
-
-Additional languages can be added by creating translation files in `client/src/lang/`.
-
-## 📖 Environment Variables
+### Optional
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `BACKEND_PORT` | `3000` | Backend API port |
-| `DATABASE_URL` | - | PostgreSQL connection string |
-| `JWT_SECRET` | - | JWT signing secret |
-| `ADMIN_PASSWORD` | - | Initial admin password |
-| `DEFAULT_LANG` | `fr` | Default system language |
-| `ENABLE_RDP` | `false` | Enable RDP support |
-| `LDAP_URL` | - | LDAP server URL |
-| `LDAP_BASE_DN` | - | LDAP search base |
-| `OIDC_ISSUER` | - | OIDC provider issuer URL |
-| `OIDC_CLIENT_ID` | - | OIDC client ID |
-| `OIDC_CLIENT_SECRET` | - | OIDC client secret |
-| `NODE_ENV` | `production / development` | Bypass ssl verification | 
+|---|---|---|
+| `NODE_ENV` | `production` | Set `development` only for local hacking. |
+| `FRONTEND_HTTPS_PORT` | `443` | Host port mapping for the web UI. |
+| `BACKEND_PORT` | `3000` | Internal port for the API container. Not exposed. |
+| `CORS_ALLOWED_ORIGINS` | `https://localhost` | Comma-separated HTTPS origins. Plaintext HTTP origins are always rejected. |
+| `ENABLE_RDP` | `false` | Build & start the guacd companion container. Required for any RDP/VNC machine. |
+| `RECORDINGS_PATH` | `/var/lib/bastion/recordings` | Volume path for asciinema recordings. |
+| `RECORDINGS_ENABLED` | `true` | Set to `false` to disable session recording entirely. |
+| `DEFAULT_LANG` | `fr` | Default UI language (`fr` or `en`). Configurable later in admin settings. |
+| `THROTTLE_AUTH_TTL` / `THROTTLE_AUTH_LIMIT` | `900000` / `20` | Login rate limit window and count. |
+| `THROTTLE_GLOBAL_TTL` / `THROTTLE_GLOBAL_LIMIT` | `1000` / `20` | Global per-IP rate limit. |
 
+> 🔒 **Transport policy**: OpenBastion is HTTPS-only. The bundled nginx
+> generates a self-signed certificate at first boot — fine for trial use,
+> replace with a CA-signed certificate for production (see
+> [docs/PRODUCTION.md](docs/PRODUCTION.md)). Plaintext HTTP origins are
+> rejected at the CORS layer regardless of configuration.
 
-## 🚀 Development
+---
 
-### Backend
-```bash
-cd server
-npm install
-npm run dev
+## Architecture
+
+```
+                    Browser
+                       │ HTTPS (TLS at the edge)
+                       ▼
+        ┌──────────────────────────┐
+        │  nginx  (frontend)       │  ← serves React bundle, terminates TLS
+        └──────────┬───────────────┘
+                   │ HTTP on backend-net (internal docker network)
+                   ▼
+        ┌──────────────────────────┐
+        │  NestJS  (backend)       │  ← API + WebSocket gateways
+        └──────────┬────────┬──────┘
+                   │        └────────────┐
+                   ▼                     ▼
+        ┌──────────────────┐   ┌──────────────────────────┐
+        │ PostgreSQL       │   │ guacd  (optional, RDP)   │
+        │ (vault, audit,   │   │ Apache Guacamole daemon  │
+        │  recordings DB)  │   └──────────────────────────┘
+        └──────────────────┘
 ```
 
-### Frontend
+Three Docker networks: `frontend-net` (browser ↔ nginx), `backend-net`
+(internal only — nginx ↔ backend ↔ postgres ↔ guacd), no port forwarding
+between them.
+
+---
+
+## Development
+
 ```bash
+# Backend (NestJS + Prisma)
+npm install
+npx prisma generate
+npm run start:dev      # http://localhost:3000
+
+# Frontend (Vite + React)
 cd client
-npm install
-npm run dev
+npm install --legacy-peer-deps
+npm run dev            # https://localhost:5173
+
+# Run the security test suite
+npx jest src/auth src/users src/common
 ```
 
-### Database Migrations
+A live database is required — start just the Postgres container with
+`docker compose up postgres -d`.
+
+### Database migrations
+
+Migrations live in `prisma/migrations/`. To author a new one:
+
 ```bash
-npx prisma migrate dev
+npx prisma migrate dev --name your_change
 ```
 
-## 👥 Author
+The backend runs `prisma migrate deploy` at boot, so simply rebuilding the
+image picks up the migration in any environment.
 
-Authored and maintained by **Nardann**
+---
 
-## 🤝 Contributing
+## Security
 
-Contributions, bug reports, and feature requests are welcome. Please open an issue or submit a pull request.
+OpenBastion is engineered to be a security-critical piece of your infrastructure
+and applies the obvious defences plus a few less obvious ones:
 
-## 📞 Support
+- **Vault**: AES-256-GCM with HKDF-derived per-resource subkeys and
+  resource-id binding via AAD. The vault key never appears in the API
+  response of any endpoint.
+- **Authentication**: Argon2id for local passwords, TOTP with ±1 window
+  and replay protection, OIDC with PKCE + nonce + state.
+- **Sessions**: short-lived access JWT (15 min), refresh-token rotation
+  with reuse detection (RFC 9700 §2.2.2). Admin revoke kills both the
+  access JWT *and* every active refresh token atomically.
+- **Transport**: HTTPS only. Cookies are `HttpOnly` + `SameSite=Strict` and
+  `Secure` whenever served over HTTPS.
+- **Audit log**: HMAC-SHA256 chained per entry, verifiable via
+  `GET /api/audit/verify-integrity`.
+- **Container hardening**: backend and frontend run on `read_only` rootfs
+  with `cap_drop: ALL`, `no-new-privileges`, `pids_limit`, and tmpfs for
+  the few writable paths needed at runtime.
 
-For issues, feature requests, or security concerns, please open an issue on GitHub.
+See [SECURITY.md](.github/SECURITY.md) for the vulnerability-reporting
+process.
+
+---
+
+## Project status
+
+OpenBastion is in **beta**. It is being actively developed and used
+internally; APIs and the database schema may still change between minor
+versions. Before relying on it for production workloads:
+
+- Replace the bundled self-signed TLS certificate with one issued by a
+  trusted CA — see [docs/PRODUCTION.md](docs/PRODUCTION.md).
+- Set up Postgres backups and verify a restore drill.
+- Commission an independent security review of your specific deployment;
+  a template engagement brief is provided at
+  [docs/EXTERNAL_PENTEST_BRIEF.md](docs/EXTERNAL_PENTEST_BRIEF.md).
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome. Please:
+
+- Open an issue describing the change before sending a large PR.
+- Run `npx jest` and `npx tsc --noEmit` before pushing.
+- For anything security-related, follow the responsible disclosure flow
+  in [SECURITY.md](.github/SECURITY.md) rather than the public issue tracker.
+
+---
+
+## License
+
+Licensed under the **GNU Affero General Public License v3.0**.
+See [LICENSE](LICENSE) for the full text.

@@ -65,9 +65,11 @@ export class LdapProviderConfigDto {
 }
 
 export class OidcProviderConfigDto {
-  // Force https for issuer + redirectUri (only http://localhost is acceptable
-  // and only when the operator opts in via OIDC_ALLOW_INSECURE_TLS).
-  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] })
+  // SECURITY: HTTPS-only. The TLS-bypass dev helper is gone (CodeQL alert
+  // dismissed by removal), so accepting `http://` here would silently
+  // expose the OIDC handshake (state, code, client_secret in the body)
+  // over plaintext. Self-signed certs are fine — unencrypted is not.
+  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['https'] })
   @MaxLength(512)
   issuer!: string;
 
@@ -80,7 +82,7 @@ export class OidcProviderConfigDto {
   @MaxLength(2048)
   clientSecret!: string;
 
-  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['http', 'https'] })
+  @IsUrl({ require_tld: false, require_protocol: true, protocols: ['https'] })
   @MaxLength(512)
   redirectUri!: string;
 
