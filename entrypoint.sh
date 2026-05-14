@@ -15,30 +15,40 @@ if ! id "nestjs" >/dev/null 2>&1; then
   }
 fi
 
-# ── Baseline an existing schema if needed ─────────────────────────────────
-# When the DB was originally created with `prisma db push` (no migration
-# history table) and we later switched to `prisma migrate deploy`, the
-# first deploy fails with P3005 ("database schema is not empty"). We detect
-# the missing _prisma_migrations table and mark the existing migrations as
-# "applied" without re-running them. This keeps user data intact.
-echo "Checking migration history baseline..."
-NEEDS_BASELINE=$(npx --yes prisma migrate status 2>&1 || true)
-if echo "$NEEDS_BASELINE" | grep -qE "P3005|database schema is not empty|_prisma_migrations.*does not exist"; then
-  echo "⚠ Existing schema without migration history detected — baselining."
-  for m in prisma/migrations/*/ ; do
-    name=$(basename "$m")
-    [ "$name" = "*" ] && continue # no migrations dir entries
-    echo "  → marking $name as applied"
-    npx --yes prisma migrate resolve --applied "$name" || true
-  done
-fi
-
+# ── Migrations: deploy, with auto-baseline fallback ──────────────────────
+# Background: scripts/init-db/*.sql initialise the schema directly when the
+# Postgres container is first created, so by the time the backend starts,
+# all the tables already exist BUT the `_prisma_migrations` history table
+# does NOT. The first `prisma migrate deploy` then fails with P3005:
+#     "The database schema is not empty"
+# Fix: detect that error, walk every migration directory, mark each as
+# applied (creates `_prisma_migrations` and inserts the rows without
+# re-running the SQL), then retry `migrate deploy` which is now a no-op.
 echo "Applying schema migrations..."
-# prisma migrate deploy is idempotent and safe:
-# - Fresh DB  : creates _prisma_migrations, applies 0001_init
-# - Existing DB freshly baselined (above): no-op
-# - Subsequent restarts: only new migrations are applied
-npx prisma migrate deploy
+DEPLOY_OUTPUT=$(npx --yes prisma migrate deploy 2>&1) || DEPLOY_RC=$?
+echo "$DEPLOY_OUTPUT"
+
+if [ "${DEPLOY_RC:-0}" -ne 0 ]; then
+  if echo "$DEPLOY_OUTPUT" | grep -q "P3005"; then
+    echo "⚠ P3005 detected — schema exists without migration history."
+    echo "  Baselining each migration as already applied..."
+    if [ -d prisma/migrations ]; then
+      for m in prisma/migrations/*/; do
+        name=$(basename "$m")
+        [ "$name" = "*" ] && continue
+        case "$name" in _*) continue;; esac # skip _meta etc.
+        echo "  → $name"
+        # Best-effort: ignore "already applied" / "already recorded" errors on retries.
+        npx --yes prisma migrate resolve --applied "$name" 2>&1 || true
+      done
+    fi
+    echo "Re-running migrate deploy after baseline..."
+    npx --yes prisma migrate deploy
+  else
+    echo "❌ migrate deploy failed for an unexpected reason. Aborting."
+    exit "$DEPLOY_RC"
+  fi
+fi
 
 echo "Starting NestJS application..."
 exec su -s /bin/sh nestjs -c "npm run start:prod"

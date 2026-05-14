@@ -169,6 +169,11 @@ export class AuthController {
     if (body.enabled !== undefined) updatePayload.enabled = body.enabled;
     const result = await this.authProvidersService.update(id, updatePayload);
 
+    // SECURITY (F-03 fix): drop the OIDC discovery cache so the next
+    // login flow re-discovers against the new issuer instead of reusing
+    // potentially-malicious metadata from the previous one.
+    if (result.type === 'OIDC') this.oidcService.invalidateCache();
+
     await this.auditService.logAction(
       null as any,
       'AUTH: PROVIDER_UPDATED',
@@ -223,6 +228,10 @@ export class AuthController {
         });
       }
     }
+
+    // SECURITY (F-03 fix): same as updateProvider — clear cached
+    // discovery metadata so the next callback re-discovers.
+    if (body.type === 'OIDC') this.oidcService.invalidateCache();
 
     return {
       ...result,

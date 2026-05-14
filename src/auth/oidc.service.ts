@@ -29,6 +29,13 @@ type OidcLib = Record<string, unknown>;
 @Injectable()
 export class OidcService {
   private readonly logger = new Logger(OidcService.name);
+  // SECURITY (F-03 fix): the cache key is now `provider.id || issuerUrl`
+  // so that changing the issuer invalidates the cached metadata
+  // immediately. Previously the key was just `provider.id`, allowing a
+  // TOC-TOU where an admin pointed the issuer at a malicious server,
+  // populated the cache, then reverted the issuer to a legitimate URL.
+  // The next OIDC flow used the legitimate issuer label but the cached
+  // (malicious) `token_endpoint` → SSRF.
   private configCache = new Map<string, ConfigCacheEntry>();
   private readonly CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -36,6 +43,71 @@ export class OidcService {
     private authProvidersService: AuthProvidersService,
     private usersService: UsersService,
   ) {}
+
+  /** F-03: invalidate the cache when the provider config is updated. */
+  invalidateCache(): void {
+    this.configCache.clear();
+  }
+
+  /**
+   * F-03: validate the endpoints advertised in the discovery document.
+   * If any of them resolve to a private/loopback/link-local IP, the
+   * metadata is rejected — that's the SSRF vector closed off.
+   *
+   * We only validate the schemes & hostnames here (not full DNS
+   * resolution) because the openid-client library will perform the
+   * actual fetches. The check below catches the obvious "rogue IdP
+   * pointing at 127.0.0.1" / "::1" / "169.254.169.254" cases.
+   */
+  private validateDiscoveryEndpoints(meta: unknown): void {
+    const m = meta as Record<string, unknown> | null;
+    const sub = (m?.['serverMetadata'] ?? m) as Record<string, unknown> | null;
+    if (!sub) return;
+    const fields = [
+      'authorization_endpoint',
+      'token_endpoint',
+      'userinfo_endpoint',
+      'jwks_uri',
+      'end_session_endpoint',
+      'introspection_endpoint',
+      'revocation_endpoint',
+    ];
+    for (const f of fields) {
+      const v = sub[f];
+      if (typeof v !== 'string' || v.length === 0) continue;
+      let url: URL;
+      try {
+        url = new URL(v);
+      } catch {
+        throw new Error(`OIDC discovery: invalid URL in ${f}: ${v}`);
+      }
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+        throw new Error(`OIDC discovery: unsupported scheme in ${f}: ${url.protocol}`);
+      }
+      if (this.isPrivateOrLoopbackHost(url.hostname)) {
+        throw new Error(
+          `OIDC discovery: ${f} points at internal address ${url.hostname} (refused as SSRF risk)`,
+        );
+      }
+    }
+  }
+
+  private isPrivateOrLoopbackHost(host: string): boolean {
+    const h = host.toLowerCase();
+    if (h === 'localhost') return true;
+    // IPv4 ranges + IPv6 loopback / unique-local / link-local
+    if (/^127\./.test(h)) return true;
+    if (/^10\./.test(h)) return true;
+    if (/^192\.168\./.test(h)) return true;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+    if (/^169\.254\./.test(h)) return true;
+    if (h === '::1' || h === '::') return true;
+    if (h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) return true;
+    // host.docker.internal and friends are explicitly internal
+    if (h === 'host.docker.internal' || h === 'gateway.docker.internal') return true;
+    if (h.endsWith('.internal') || h.endsWith('.local')) return true;
+    return false;
+  }
 
   private async getOpenidClient(): Promise<OidcLib> {
     const lib = await import('openid-client') as unknown as OidcLib;
@@ -127,17 +199,22 @@ export class OidcService {
       return null;
     }
 
-    const cached = this.configCache.get(provider.id);
-    if (cached && Date.now() - cached.cachedAt < this.CACHE_TTL_MS) {
-      return cached.serverMetadata;
-    }
-
     const config = provider.config as OidcProviderConfig;
     const issuerUrl = config.issuer;
 
     if (!issuerUrl) {
       this.logger.error('OIDC config missing issuer URL');
       return null;
+    }
+
+    // F-03: cache key binds (providerId, issuerUrl) so toggling the
+    // issuer invalidates the entry. Combined with `invalidateCache()`
+    // called from the upsert flow, this closes the TOC-TOU window where
+    // a malicious metadata document outlives the issuer that produced it.
+    const cacheKey = `${provider.id}::${issuerUrl}`;
+    const cached = this.configCache.get(cacheKey);
+    if (cached && Date.now() - cached.cachedAt < this.CACHE_TTL_MS) {
+      return cached.serverMetadata;
     }
 
     try {
@@ -158,7 +235,13 @@ export class OidcService {
         serverMetadata = await discovery(new URL(issuerUrl), config.clientId, config.clientSecret);
       }
 
-      this.configCache.set(provider.id, { serverMetadata, config, cachedAt: Date.now() });
+      // F-03: refuse metadata that points any endpoint at an internal IP
+      // BEFORE we cache it. The IdP-controlled token_endpoint is what
+      // causes SSRF on the OAuth code exchange — the rest are checked for
+      // the same reason.
+      this.validateDiscoveryEndpoints(serverMetadata);
+
+      this.configCache.set(cacheKey, { serverMetadata, config, cachedAt: Date.now() });
       this.logger.log('OIDC discovery successful');
       return serverMetadata;
     } catch (error: unknown) {

@@ -40,12 +40,19 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
       stream: any;
       machineId: string;
       sessionId: string;
+      userId: string;
       startTime: Date;
       timeoutId: NodeJS.Timeout;
       inactivityTimer: NodeJS.Timeout;
+      // F-02: poll RBAC every 30s independently of incoming traffic, so a
+      // viewer who never types still gets cut off on revoke.
+      accessPoll: NodeJS.Timeout;
       accessCache?: { allowed: boolean; lastChecked: number };
     }
   >();
+  // SECURITY (F-02): how often to re-verify RBAC for an active session.
+  // 30 s is the documented compromise window in the brief.
+  private readonly RBAC_POLL_INTERVAL_MS = 30_000;
   private inputRateLimiter = new Map<
     string,
     { count: number; resetAt: number }
@@ -176,6 +183,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (session) {
       clearTimeout(session.timeoutId);
       clearTimeout(session.inactivityTimer);
+      clearInterval(session.accessPoll); // F-02
       const duration = Math.round(
         (new Date().getTime() - session.startTime.getTime()) / 1000,
       );
@@ -287,14 +295,48 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         4 * 60 * 60 * 1000,
       ); // 4 hours
 
+      // SECURITY (F-02): start a periodic RBAC re-check tied to this
+      // session. Without this, a USER whose access is revoked mid-session
+      // continues to receive the terminal stream as long as they don't
+      // type — `handleInput` is the only path that re-checks RBAC.
+      const accessPoll = setInterval(async () => {
+        const session = this.sshSessions.get(client.id);
+        if (!session) return;
+        try {
+          const stillAllowed = await this.rbacService.hasAccess(
+            user.sub,
+            session.machineId,
+            AccessLevel.OPERATOR,
+          );
+          session.accessCache = { allowed: stillAllowed, lastChecked: Date.now() };
+          if (!stillAllowed) {
+            this.logger.warn(
+              `RBAC revocation detected for user=${user.sub} machine=${session.machineId} — closing session`,
+            );
+            client.emit('error', 'Access revoked');
+            session.stream.end();
+            session.client.end();
+            this.sshSessions.delete(client.id);
+            client.disconnect();
+          }
+        } catch (e) {
+          // On a transient DB error, do not kill the session — keep going.
+          this.logger.warn(
+            `RBAC poll failed (transient): ${(e as Error).message}`,
+          );
+        }
+      }, this.RBAC_POLL_INTERVAL_MS);
+
       this.sshSessions.set(client.id, {
         client: sshClient,
         stream,
         machineId: data.machineId,
         sessionId,
+        userId: user.sub,
         startTime: new Date(),
         timeoutId,
         inactivityTimer: this.createInactivityTimer(client),
+        accessPoll,
       });
 
       await this.recorder.start({
@@ -395,6 +437,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       if (!isAllowed) {
         client.emit('error', 'Access revoked');
+        clearInterval(session.accessPoll); // F-02
         session.stream.end();
         session.client.end();
         this.sshSessions.delete(client.id);
