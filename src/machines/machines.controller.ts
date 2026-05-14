@@ -97,6 +97,17 @@ export class MachinesController {
   }
 
   private async assertProbeTargetAllowed(target: string, port: number): Promise<void> {
+    // SECURITY: bastion semantics — we ALLOW private RFC1918 / unique-local
+    // IPv6 / public Internet (that is the product's purpose), and we BLOCK
+    // dangerous ranges that should never be SSH-probed:
+    //   - loopback                 (127/8, ::1)        — bastion itself
+    //   - link-local + cloud meta  (169.254/16, fe80::/10) — IAM creds
+    //   - carrier-grade NAT        (100.64/10)
+    //   - multicast / broadcast / unspecified / reserved
+    //   - 6to4 / teredo / rfc6052 / ipv4Mapped wrappings that smuggle a
+    //     loopback IPv4 inside an IPv6 address
+    //
+    // Internal Docker services are blocked separately by hostname.
     const HOST_DENY = new Set([
       'localhost',
       'postgres',
@@ -111,17 +122,18 @@ export class MachinesController {
     ]);
     if (HOST_DENY.has(target.toLowerCase())) {
       throw new ForbiddenException(
-        'Cible interne refusée (boucle locale ou service interne du bastion)',
+        'Cible interne refusée (service interne du bastion)',
       );
     }
 
-    // Ports privilégiés autres que 22 → suspect, refusés.
     if (port < 1024 && port !== 22) {
       throw new ForbiddenException(
         'Seul le port 22 est autorisé pour les ports privilégiés',
       );
     }
 
+    // Resolve hostname → list of IPs, then check each. Direct IPs are
+    // checked as-is.
     let candidates: string[];
     if (net.isIP(target)) {
       candidates = [target];
@@ -135,38 +147,32 @@ export class MachinesController {
     }
 
     for (const ip of candidates) {
-      if (this.isPrivateOrReservedIp(ip)) {
+      if (this.isDangerousIp(ip)) {
         throw new ForbiddenException(
-          `Cible interne refusée: ${ip} (RFC1918 / loopback / link-local / metadata)`,
+          `Cible refusée: ${ip} (loopback / link-local / metadata cloud / multicast)`,
         );
       }
     }
   }
 
   /**
-   * SECURITY (F-05 fix): canonicalise the address through `ipaddr.js`
-   * before classification, so that all equivalent representations of the
-   * same destination map to the same answer:
+   * Returns true ONLY for ranges that should never be SSH-probed (loopback,
+   * link-local incl. cloud metadata, CGNAT, multicast/broadcast/reserved,
+   * and IPv6 wrappings that hide a loopback IPv4).
    *
-   *   ::ffff:127.0.0.1   →  loopback
-   *   ::ffff:7f00:1      →  loopback   (was a bypass before this fix —
-   *                                     the old hand-rolled regex only
-   *                                     accepted decimal-dotted form)
-   *   2002:7f00:1::      →  6to4 wrapping a private IPv4
-   *   ::1                →  loopback
+   * Returns false (allowed) for:
+   *   - private RFC1918 (10/8, 172.16/12, 192.168/16)  — bastion targets
+   *   - unique-local IPv6 (fc00::/7)                    — bastion targets
+   *   - public unicast IPv4 + IPv6                      — bastion targets
    *
-   * `range()` returns a category like 'unicast', 'loopback', 'private',
-   * 'linkLocal', 'uniqueLocal', 'multicast', 'reserved', etc. We block
-   * everything that isn't a public unicast, with one extra rule for AWS
-   * metadata (169.254.169.254) which is reported as 'linkLocal' by
-   * ipaddr.js — already covered.
+   * Canonicalisation via ipaddr.js makes hex IPv4-mapped IPv6 forms
+   * (`::ffff:7f00:1` == `127.0.0.1`) be classified through the unwrapped
+   * IPv4 — no bypass.
    */
-  private isPrivateOrReservedIp(ip: string): boolean {
+  private isDangerousIp(ip: string): boolean {
     if (!ipaddr.isValid(ip)) return true; // unparseable → fail closed
     let parsed: ipaddr.IPv4 | ipaddr.IPv6 = ipaddr.parse(ip);
 
-    // Unwrap IPv4-mapped IPv6 to the underlying IPv4 so the IPv4 ranges
-    // (RFC 1918, CGNAT, loopback) are consistently applied.
     if (parsed.kind() === 'ipv6') {
       const v6 = parsed as ipaddr.IPv6;
       if (v6.isIPv4MappedAddress()) {
@@ -174,25 +180,23 @@ export class MachinesController {
       }
     }
 
-    const range = parsed.range(); // string label
-    const blockedRanges = new Set<string>([
-      'unspecified',     // 0.0.0.0 / ::
-      'broadcast',       // 255.255.255.255
-      'multicast',       // 224.0.0.0/4 / ff00::/8
-      'linkLocal',       // 169.254/16 / fe80::/10  (incl. AWS metadata)
-      'loopback',        // 127/8 / ::1
-      'carrierGradeNat', // 100.64/10
-      'private',         // 10/8, 172.16/12, 192.168/16
-      'uniqueLocal',     // fc00::/7
-      'ipv4Mapped',      // ::ffff:0:0/96 (should already be unwrapped)
-      'rfc6145',         // 64:ff9b::/96
-      'rfc6052',         // 64:ff9b::/96 alias
-      '6to4',            // 2002::/16
-      'teredo',          // 2001::/32
-      'reserved',        // misc reserved blocks
+    const dangerous = new Set<string>([
+      'unspecified',
+      'broadcast',
+      'multicast',
+      'linkLocal',
+      'loopback',
+      'carrierGradeNat',
+      'ipv4Mapped',
+      'rfc6145',
+      'rfc6052',
+      '6to4',
+      'teredo',
+      'reserved',
     ]);
-    return blockedRanges.has(range);
+    return dangerous.has(parsed.range());
   }
+
 
   @Patch(':id')
   @Roles(Role.ADMIN)
