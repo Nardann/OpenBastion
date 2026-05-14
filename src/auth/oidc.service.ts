@@ -109,6 +109,23 @@ export class OidcService {
     return false;
   }
 
+  /**
+   * Stricter than `isPrivateOrLoopbackHost`: returns true ONLY for true
+   * loopback addresses. Used by `buildInsecureFetch` to ensure the
+   * insecure agent never reaches a non-loopback destination, even if the
+   * IdP metadata tries to redirect us elsewhere post-discovery.
+   */
+  private isLoopbackOnlyHost(host: string): boolean {
+    const h = host.toLowerCase();
+    return (
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '::1' ||
+      h === '[::1]' ||
+      /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)
+    );
+  }
+
   private async getOpenidClient(): Promise<OidcLib> {
     const lib = await import('openid-client') as unknown as OidcLib;
     return lib;
@@ -136,13 +153,52 @@ export class OidcService {
     }
   }
 
+  /**
+   * SECURITY (CodeQL js/disabling-certificate-validation, dev-only path):
+   *
+   * This function returns a fetch wrapper that disables TLS verification.
+   * That is unsafe in any production context, so the call site is gated
+   * twice already:
+   *   1. `allowsInsecureTls()` requires both `OIDC_ALLOW_INSECURE_TLS=true`
+   *      AND a loopback issuer (`localhost` / `127.0.0.1` / `::1`).
+   *   2. This wrapper applies the insecure agent ONLY when the requested
+   *      URL itself is also loopback. A malicious metadata document
+   *      returned by a loopback IdP that points `token_endpoint` at
+   *      `https://attacker.com/...` (post-discovery vector) would fall
+   *      through to the standard `globalThis.fetch`, where Node's default
+   *      certificate validation kicks back in.
+   *
+   * The literal `rejectUnauthorized: false` is flagged by
+   * `js/disabling-certificate-validation` — we accept that finding because
+   * it is the entire purpose of this opt-in dev helper. The suppression
+   * below documents the rationale; do not remove it without revisiting
+   * the guards above.
+   */
+  // codeql[js/disabling-certificate-validation]
+  // lgtm[js/disabling-certificate-validation]
   private buildInsecureFetch(): typeof fetch {
-    const agent = new https.Agent({ rejectUnauthorized: false });
+    const insecureAgent = new https.Agent({ rejectUnauthorized: false }); // codeql[js/disabling-certificate-validation]
+    const isLoopbackUrl = (u: string): boolean => {
+      try {
+        return this.isLoopbackOnlyHost(new URL(u).hostname);
+      } catch {
+        return false;
+      }
+    };
 
     return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = input instanceof URL ? input.toString() : String(input);
 
-      if (!url.startsWith('https://')) {
+      // SECURITY: only the loopback fetches get the insecure agent.
+      // Anything else (e.g. a `token_endpoint` field smuggled into the
+      // metadata by a rogue loopback IdP) is forwarded to the standard
+      // fetch which still validates certificates.
+      if (!url.startsWith('https://') || !isLoopbackUrl(url)) {
+        if (url.startsWith('https://') && !isLoopbackUrl(url)) {
+          this.logger.warn(
+            `OIDC insecure fetch refused to apply to non-loopback URL: ${url}`,
+          );
+        }
         return globalThis.fetch(input, init);
       }
 
@@ -154,7 +210,7 @@ export class OidcService {
           path: parsed.pathname + parsed.search,
           method: (init?.method as string) || 'GET',
           headers: init?.headers as Record<string, string>,
-          agent,
+          agent: insecureAgent,
         };
 
         const req = https.request(options, (res) => {

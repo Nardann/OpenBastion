@@ -1,0 +1,24 @@
+# CodeQL configuration for OpenBastion
+#
+# We keep the default JavaScript / TypeScript query suites and only document
+# (do not blanket-disable) the alert that survives an architectural review.
+
+name: openbastion-codeql
+
+queries:
+  - uses: security-and-quality
+  - uses: security-extended
+
+# Path filters: skip generated / vendored code.
+paths-ignore:
+  - 'node_modules/**'
+  - 'client/node_modules/**'
+  - 'dist/**'
+  - 'client/dist/**'
+  - 'prisma/migrations/**'
+  - 'coverage/**'
+
+# Inline `// codeql[js/disabling-certificate-validation]` markers handle the
+# OIDC dev-only TLS bypass in src/auth/oidc.service.ts. The guard chain
+# (env var `OIDC_ALLOW_INSECURE_TLS=true` + loopback issuer + loopback-only
+# fetch) is documented in that file; the suppression is intentional.
