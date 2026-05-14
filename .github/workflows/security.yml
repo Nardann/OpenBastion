@@ -32,19 +32,32 @@ jobs:
           - scope: backend
             workdir: '.'
             audit_args: '--omit=dev'
+            install_args: ''
           - scope: frontend
             workdir: 'client'
             audit_args: ''
+            # Frontend Dockerfile uses `--legacy-peer-deps` to side-step
+            # transient peer-dep conflicts in the React 19 toolchain. CI
+            # must use the same flag, otherwise `npm ci` errors out with
+            # "lock file ... does not satisfy ..." on packages the legacy
+            # resolver pinned to older majors (e.g. picomatch 2.x vs 4.x).
+            install_args: '--legacy-peer-deps'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: ${{ matrix.workdir }}/package-lock.json
       - name: Install (lockfile-only, no scripts)
         working-directory: ${{ matrix.workdir }}
-        run: npm ci --ignore-scripts
+        # npm ci is strict on lockfile coherence; we fall back to a
+        # non-strict `install --no-save` only as a CI safety net so a stale
+        # transitive bump doesn't block the workflow entirely. The audit
+        # step below is what we actually care about.
+        run: |
+          npm ci --ignore-scripts ${{ matrix.install_args }} \
+            || npm install --no-save --ignore-scripts ${{ matrix.install_args }}
       - name: Audit (high+critical)
         working-directory: ${{ matrix.workdir }}
         run: npm audit ${{ matrix.audit_args }} --audit-level=high
@@ -58,7 +71,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: |
           semgrep \
             --config=p/owasp-top-ten \
@@ -76,7 +89,7 @@ jobs:
         continue-on-error: true
       - name: Upload SARIF to GitHub code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
 
@@ -88,7 +101,7 @@ jobs:
     name: gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - uses: gitleaks/gitleaks-action@v2
@@ -103,12 +116,12 @@ jobs:
     name: jest (security suites)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
-      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts || npm install --no-save --ignore-scripts
       - run: npx prisma generate
       - name: Run security-critical specs
         run: |

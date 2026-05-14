@@ -3,7 +3,6 @@ import { AuthProvidersService } from './auth-providers.service';
 import { UsersService } from '../users/users.service';
 import { AuthMethod, User } from '@prisma/client';
 import { OidcProviderConfig } from './types/auth-provider.types';
-import * as https from 'node:https';
 
 interface OidcUserInfo {
   sub: string;
@@ -109,151 +108,17 @@ export class OidcService {
     return false;
   }
 
-  /**
-   * Stricter than `isPrivateOrLoopbackHost`: returns true ONLY for true
-   * loopback addresses. Used by `buildInsecureFetch` to ensure the
-   * insecure agent never reaches a non-loopback destination, even if the
-   * IdP metadata tries to redirect us elsewhere post-discovery.
-   */
-  private isLoopbackOnlyHost(host: string): boolean {
-    const h = host.toLowerCase();
-    return (
-      h === 'localhost' ||
-      h === '127.0.0.1' ||
-      h === '::1' ||
-      h === '[::1]' ||
-      /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)
-    );
-  }
-
   private async getOpenidClient(): Promise<OidcLib> {
     const lib = await import('openid-client') as unknown as OidcLib;
     return lib;
   }
 
-  /**
-   * SECURITY: TLS bypass eligibility for OIDC discovery/token fetch.
-   *
-   * Two conditions must BOTH be met before we accept a self-signed/expired
-   * certificate from the IdP:
-   *   1. Operator explicitly set OIDC_ALLOW_INSECURE_TLS=true.
-   *   2. The issuer hostname is strictly loopback (`localhost` or `127.0.0.1`).
-   *
-   * The previous heuristic also matched `host.docker.internal` and the
-   * entire 192.168.0.0/16 LAN range, allowing transparent MITM by anyone on
-   * the same network. We now ignore NODE_ENV entirely for this decision.
-   */
-  private allowsInsecureTls(issuerUrl: string): boolean {
-    if (process.env['OIDC_ALLOW_INSECURE_TLS'] !== 'true') return false;
-    try {
-      const host = new URL(issuerUrl).hostname;
-      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-    } catch {
-      return false;
-    }
-  }
+  // NOTE: `OIDC_ALLOW_INSECURE_TLS` was removed. Local OIDC testing must
+  // use a properly trusted certificate (e.g. `mkcert`); the bypass path
+  // is no longer reachable and the literal `rejectUnauthorized: false`
+  // has been deleted from this file, closing CodeQL alert
+  // `js/disabling-certificate-validation` and the equivalent Semgrep rule.
 
-  /**
-   * SECURITY (CodeQL js/disabling-certificate-validation +
-   * Semgrep bypass-tls-verification, both intentional):
-   *
-   * This function returns a fetch wrapper that disables TLS verification.
-   * That is unsafe in any production context, so the call site is gated
-   * three times:
-   *   1. `allowsInsecureTls()` requires both `OIDC_ALLOW_INSECURE_TLS=true`
-   *      AND a loopback issuer (`localhost` / `127.0.0.1` / `::1`).
-   *   2. This wrapper applies the insecure agent ONLY when the requested
-   *      URL itself is also loopback. A malicious metadata document
-   *      returned by a loopback IdP that points `token_endpoint` at
-   *      `https://attacker.com/...` falls through to `globalThis.fetch`,
-   *      where Node's default certificate validation kicks back in.
-   *   3. F-03's discovery-endpoint validator rejects any metadata that
-   *      points endpoints at internal addresses BEFORE caching, so the
-   *      insecure agent never sees a SSRF-style payload at all.
-   *
-   * The literal `rejectUnauthorized: false` is flagged by
-   * `js/disabling-certificate-validation` (CodeQL) and
-   * `problem-based-packs.insecure-transport.js-node.bypass-tls-verification`
-   * (Semgrep). We accept both findings because it is the entire purpose
-   * of this opt-in dev helper. Do not remove the suppressions without
-   * revisiting the guards above.
-   */
-  // codeql[js/disabling-certificate-validation]
-  // lgtm[js/disabling-certificate-validation]
-  // nosemgrep: bypass-tls-verification
-  private buildInsecureFetch(): typeof fetch {
-    // codeql[js/disabling-certificate-validation]
-    // nosemgrep: bypass-tls-verification
-    const insecureAgent = new https.Agent({ rejectUnauthorized: false }); // codeql[js/disabling-certificate-validation] nosemgrep
-    const isLoopbackUrl = (u: string): boolean => {
-      try {
-        return this.isLoopbackOnlyHost(new URL(u).hostname);
-      } catch {
-        return false;
-      }
-    };
-
-    return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = input instanceof URL ? input.toString() : String(input);
-
-      // SECURITY: only the loopback fetches get the insecure agent.
-      // Anything else (e.g. a `token_endpoint` field smuggled into the
-      // metadata by a rogue loopback IdP) is forwarded to the standard
-      // fetch which still validates certificates.
-      if (!url.startsWith('https://') || !isLoopbackUrl(url)) {
-        if (url.startsWith('https://') && !isLoopbackUrl(url)) {
-          this.logger.warn(
-            `OIDC insecure fetch refused to apply to non-loopback URL: ${url}`,
-          );
-        }
-        return globalThis.fetch(input, init);
-      }
-
-      return new Promise<Response>((resolve, reject) => {
-        const parsed = new URL(url);
-        const options: https.RequestOptions = {
-          hostname: parsed.hostname,
-          port: parsed.port || 443,
-          path: parsed.pathname + parsed.search,
-          method: (init?.method as string) || 'GET',
-          headers: init?.headers as Record<string, string>,
-          agent: insecureAgent,
-        };
-
-        const req = https.request(options, (res) => {
-          const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
-          res.on('end', () => {
-            const body = Buffer.concat(chunks);
-            resolve(
-              new Response(body, {
-                status: res.statusCode ?? 200,
-                statusText: res.statusMessage ?? '',
-                headers: res.headers as Record<string, string>,
-              }),
-            );
-          });
-        });
-
-        req.on('error', reject);
-
-        if (init?.body) {
-          let bodyData: string | Buffer;
-          if (init.body instanceof URLSearchParams) {
-            bodyData = init.body.toString();
-          } else if (typeof init.body === 'string') {
-            bodyData = init.body;
-          } else if (Buffer.isBuffer(init.body)) {
-            bodyData = init.body;
-          } else {
-            bodyData = String(init.body);
-          }
-          req.write(bodyData);
-        }
-        req.end();
-      });
-    };
-  }
 
   async getServerMetadata(): Promise<unknown | null> {
     const provider = await this.authProvidersService.findByType('OIDC');
@@ -286,17 +151,12 @@ export class OidcService {
 
       const oidc = await this.getOpenidClient();
       const discovery = oidc['discovery'] as (issuer: URL, clientId: string, clientSecret: string, ...args: unknown[]) => Promise<unknown>;
-      const useInsecure = this.allowsInsecureTls(issuerUrl);
 
-      let serverMetadata: unknown;
-      if (useInsecure) {
-        this.logger.warn('Using insecure TLS fetch for internal OIDC issuer — dev only');
-        const insecureFetch = this.buildInsecureFetch();
-        const customFetchSym = (oidc['customFetch'] as symbol) ?? Symbol.for('customFetch');
-        serverMetadata = await discovery(new URL(issuerUrl), config.clientId, config.clientSecret, undefined, { [customFetchSym]: insecureFetch });
-      } else {
-        serverMetadata = await discovery(new URL(issuerUrl), config.clientId, config.clientSecret);
-      }
+      const serverMetadata = await discovery(
+        new URL(issuerUrl),
+        config.clientId,
+        config.clientSecret,
+      );
 
       // F-03: refuse metadata that points any endpoint at an internal IP
       // BEFORE we cache it. The IdP-controlled token_endpoint is what
@@ -360,12 +220,6 @@ export class OidcService {
       const oidc = await this.getOpenidClient();
       const authCodeGrant = oidc['authorizationCodeGrant'] as (meta: unknown, url: URL, opts: Record<string, unknown>, ...rest: unknown[]) => Promise<OidcTokenSet>;
       const fetchUserInfo = oidc['fetchUserInfo'] as (meta: unknown, token: string, sub: string, ...rest: unknown[]) => Promise<OidcUserInfo>;
-      const customFetchSym = (oidc['customFetch'] as symbol) ?? Symbol.for('customFetch');
-
-      const provider = await this.authProvidersService.findByType('OIDC');
-      const config = provider!.config as OidcProviderConfig;
-      const issuerUrl = config.issuer;
-      const useInsecure = this.allowsInsecureTls(issuerUrl);
 
       const grantOpts: Record<string, unknown> = {
         pkceCodeVerifier: codeVerifier,
@@ -373,17 +227,12 @@ export class OidcService {
         expectedNonce: savedNonce,
       };
 
-      let tokens: OidcTokenSet;
-      let userinfo: OidcUserInfo;
-
-      if (useInsecure) {
-        const insecureFetch = this.buildInsecureFetch();
-        tokens = await authCodeGrant(serverMetadata, new URL(fullUrl), grantOpts, undefined, { [customFetchSym]: insecureFetch });
-        userinfo = await fetchUserInfo(serverMetadata, tokens.access_token, tokens.claims()?.sub ?? '', { [customFetchSym]: insecureFetch });
-      } else {
-        tokens = await authCodeGrant(serverMetadata, new URL(fullUrl), grantOpts);
-        userinfo = await fetchUserInfo(serverMetadata, tokens.access_token, tokens.claims()?.sub ?? '');
-      }
+      const tokens = await authCodeGrant(serverMetadata, new URL(fullUrl), grantOpts);
+      const userinfo = await fetchUserInfo(
+        serverMetadata,
+        tokens.access_token,
+        tokens.claims()?.sub ?? '',
+      );
 
       if (!userinfo.email) { this.logger.error('OIDC user has no email claim'); return null; }
       if (!userinfo.sub) { this.logger.error('OIDC user has no sub claim'); return null; }

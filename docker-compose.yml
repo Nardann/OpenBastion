@@ -86,7 +86,9 @@ services:
       VAULT_SALT: ${VAULT_SALT} # OBLIGATOIRE — générer avec: openssl rand -hex 16
       BACKEND_PORT: ${BACKEND_PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,https://localhost}
+      # SECURITY: HTTPS-only. Plaintext-HTTP origins are rejected at the
+      # CORS layer regardless of this value, but keep the default tidy.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://localhost}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       RECORDINGS_PATH: /var/lib/bastion/recordings
@@ -97,8 +99,8 @@ services:
       ENABLE_RDP: ${ENABLE_RDP:-false}
       # SECURITY: jeton requis en production pour /metrics (sans, /metrics est désactivé)
       METRICS_TOKEN: ${METRICS_TOKEN:-}
-      # SECURITY: opt-in explicite pour le bypass TLS du discovery OIDC (loopback uniquement)
-      OIDC_ALLOW_INSECURE_TLS: ${OIDC_ALLOW_INSECURE_TLS:-false}
+      # NOTE: OIDC_ALLOW_INSECURE_TLS a été retiré — utilise un cert valide
+      # (mkcert pour le dev local) pour ton IdP de test.
     volumes:
       - recordings_data:/var/lib/bastion/recordings
     # ─── SECURITY HARDENING (aligned with the guacd container) ──────────
