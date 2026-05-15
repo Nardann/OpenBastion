@@ -17,7 +17,10 @@ services:
       PGDATA: /var/lib/postgresql/data_v17
     volumes:
       - ./pg_data:/var/lib/postgresql
-      - ./backend/scripts/init-db:/docker-entrypoint-initdb.d
+    # NOTE: no `docker-entrypoint-initdb.d` mount any more. Schema bootstrap
+    # is owned entirely by Prisma migrations (backend/prisma/migrations/*),
+    # so a fresh install and an upgraded install converge to the same state
+    # without depending on whether init scripts ran at first Postgres boot.
     # SECURITY: drop every Linux capability except those Postgres needs for
     # its own setuid (CHOWN/SETUID/SETGID/DAC_READ_SEARCH/DAC_OVERRIDE/FOWNER
     # are needed because the entrypoint chowns PGDATA at boot).

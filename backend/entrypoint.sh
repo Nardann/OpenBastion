@@ -15,15 +15,33 @@ if ! id "nestjs" >/dev/null 2>&1; then
   }
 fi
 
-# ── Migrations: deploy, with auto-baseline fallback ──────────────────────
-# Background: scripts/init-db/*.sql initialise the schema directly when the
-# Postgres container is first created, so by the time the backend starts,
-# all the tables already exist BUT the `_prisma_migrations` history table
-# does NOT. The first `prisma migrate deploy` then fails with P3005:
-#     "The database schema is not empty"
-# Fix: detect that error, walk every migration directory, mark each as
-# applied (creates `_prisma_migrations` and inserts the rows without
-# re-running the SQL), then retry `migrate deploy` which is now a no-op.
+# ── Migrations strategy ───────────────────────────────────────────────────
+#
+# Three install profiles need to land on the same schema:
+#
+#   A) Fresh install: Postgres data dir is empty, `init.sql` from
+#      scripts/init-db/ runs at the first Postgres boot and creates the
+#      base schema (== content of 0001_init/migration.sql) but does NOT
+#      create `_prisma_migrations`. We catch P3005, baseline ONLY
+#      `0001_init`, then `migrate deploy` applies 0002-N.
+#
+#   B) Old install that was created by an older version of this codebase
+#      (no Prisma migrations at all, possibly missing the columns/tables
+#      that the legacy scripts/init-db/migration-*.sql used to add).
+#      Same P3005 path as (A): baseline 0001_init, let `migrate deploy`
+#      apply 0002-N. Every 0002+ migration uses `IF NOT EXISTS`, so the
+#      ones already applied (e.g. via the legacy SQL scripts) are no-ops
+#      and the missing ones are filled in. **This is the case that makes
+#      pull + rebuild "just work" for users on old deployments.**
+#
+#   C) Up-to-date install: `_prisma_migrations` exists with every entry
+#      up to the latest migration. `migrate deploy` is a no-op.
+#
+# The single edge case is the P3005 baseline: we only mark `0001_init` as
+# applied, never the later migrations — those MUST be replayed (their
+# idempotent SQL is responsible for filling in whatever the old install
+# is missing).
+
 echo "Applying schema migrations..."
 DEPLOY_OUTPUT=$(npx --yes prisma migrate deploy 2>&1) || DEPLOY_RC=$?
 echo "$DEPLOY_OUTPUT"
@@ -31,16 +49,9 @@ echo "$DEPLOY_OUTPUT"
 if [ "${DEPLOY_RC:-0}" -ne 0 ]; then
   if echo "$DEPLOY_OUTPUT" | grep -q "P3005"; then
     echo "⚠ P3005 detected — schema exists without migration history."
-    echo "  Baselining each migration as already applied..."
-    if [ -d prisma/migrations ]; then
-      for m in prisma/migrations/*/; do
-        name=$(basename "$m")
-        [ "$name" = "*" ] && continue
-        case "$name" in _*) continue;; esac # skip _meta etc.
-        echo "  → $name"
-        # Best-effort: ignore "already applied" / "already recorded" errors on retries.
-        npx --yes prisma migrate resolve --applied "$name" 2>&1 || true
-      done
+    echo "  Baselining ONLY 0001_init (the bootstrap); later migrations will replay idempotently."
+    if [ -d prisma/migrations/0001_init ]; then
+      npx --yes prisma migrate resolve --applied "0001_init" 2>&1 || true
     fi
     echo "Re-running migrate deploy after baseline..."
     npx --yes prisma migrate deploy
