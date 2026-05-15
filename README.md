@@ -206,8 +206,12 @@ npx prisma migrate dev --name your_change
 ```
 
 The backend runs `prisma migrate deploy` at boot, so simply rebuilding the
-image picks up the migration in any environment. Ad-hoc init SQL for fresh
-Postgres clusters lives in `backend/scripts/init-db/`.
+image picks up new migrations in any environment — fresh installs **and**
+upgrades from older versions. Old installs whose database was created by a
+pre-Prisma version are auto-baselined on the first boot (the entrypoint
+detects P3005 and resolves `0001_init`), then the missing migrations replay
+idempotently. **Add every schema change as a Prisma migration**, never as
+an ad-hoc SQL file under `scripts/` — that path is intentionally gone now.
 
 ---
 

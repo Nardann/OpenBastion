@@ -53,6 +53,35 @@ describe('VaultService', () => {
     expect(() => service.decrypt(parts.join(':'), context)).toThrow();
   });
 
+  // SECURITY: GCM with a truncated auth tag is dramatically weaker — a
+  // 4-byte tag has only 2^-32 collision resistance and allows GHASH
+  // subkey recovery on repeated forgery attempts. We pin authTagLength=16
+  // so any tag of a different length is rejected before reaching
+  // setAuthTag.
+  it('should reject a truncated (short) auth tag', () => {
+    const context = 'resource-short-tag';
+    const encrypted = service.encrypt('test', context);
+    const parts = encrypted.split(':');
+    parts[2] = parts[2]!.slice(0, 8); // 4-byte tag instead of 16
+    expect(() => service.decrypt(parts.join(':'), context)).toThrow();
+  });
+
+  it('should reject an over-length auth tag', () => {
+    const context = 'resource-long-tag';
+    const encrypted = service.encrypt('test', context);
+    const parts = encrypted.split(':');
+    parts[2] = parts[2]! + parts[2]; // 32-byte tag (double)
+    expect(() => service.decrypt(parts.join(':'), context)).toThrow();
+  });
+
+  it('should reject a malformed IV length', () => {
+    const context = 'resource-bad-iv';
+    const encrypted = service.encrypt('test', context);
+    const parts = encrypted.split(':');
+    parts[0] = parts[0]!.slice(0, 16); // 8-byte IV instead of 12
+    expect(() => service.decrypt(parts.join(':'), context)).toThrow();
+  });
+
   it('should throw when context changes (AEAD)', () => {
     const encrypted = service.encrypt('secret', 'context-A');
     expect(() => service.decrypt(encrypted, 'context-B')).toThrow();
