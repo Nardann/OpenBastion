@@ -190,14 +190,23 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       await this.recorder.end(session.sessionId);
 
-      await this.auditService.logAction(
-        user?.sub || null,
-        'TERMINAL: SESSION_CLOSED',
-        { machineId: session.machineId, duration: `${duration}s`, sessionId: session.sessionId },
-        user?.authMethod || null,
-        this.getClientIp(client),
-        AuditCategory.TERMINAL,
-      );
+      await this.auditService.log({
+        actorId: user?.sub ?? null,
+        action: 'TERMINAL: SESSION_CLOSED',
+        category: AuditCategory.TERMINAL,
+        authMethod: user?.authMethod ?? null,
+        ipAddress: this.getClientIp(client),
+        details: {
+          machineId: session.machineId,
+          durationSeconds: duration,
+          sessionId: session.sessionId,
+        },
+        entities: {
+          users: [session.userId],
+          machines: [session.machineId],
+          recordings: [session.sessionId],
+        },
+      });
 
       session.stream.end();
       session.client.end();
@@ -263,6 +272,18 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         AccessLevel.OPERATOR,
       );
       if (!hasAccess) {
+        // Audit *attempted* sessions on machines the operator has no
+        // access to — useful for spotting reconnaissance / misconfigured
+        // dashboards even though the request is benign on its own.
+        await this.auditService.log({
+          actorId: user.sub,
+          action: 'TERMINAL: SESSION_DENIED',
+          category: AuditCategory.TERMINAL,
+          authMethod: user.authMethod,
+          ipAddress: this.getClientIp(client),
+          details: { machineId: data.machineId, reason: 'no_operator_access' },
+          entities: { users: [user.sub], machines: [data.machineId] },
+        });
         client.emit('error', 'Permission denied');
         return;
       }
@@ -317,6 +338,23 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
             session.stream.end();
             session.client.end();
             this.sshSessions.delete(client.id);
+            // Surface the kill so admins see *why* a session was cut even
+            // though the user did nothing wrong.
+            void this.auditService
+              .log({
+                actorId: session.userId,
+                action: 'TERMINAL: SESSION_KILLED_RBAC_REVOKE',
+                category: AuditCategory.TERMINAL,
+                authMethod: user.authMethod,
+                ipAddress: this.getClientIp(client),
+                details: { sessionId: session.sessionId, reason: 'rbac_revoke' },
+                entities: {
+                  users: [session.userId],
+                  machines: [session.machineId],
+                  recordings: [session.sessionId],
+                },
+              })
+              .catch((e) => this.logger.error('Failed to audit RBAC revoke', e));
             client.disconnect();
           }
         } catch (e) {
@@ -348,19 +386,26 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         title: `${machine.name} (${machine.ip})`,
       });
 
-      await this.auditService.logAction(
-        user.sub,
-        'TERMINAL: SESSION_STARTED',
-        {
+      await this.auditService.log({
+        actorId: user.sub,
+        action: 'TERMINAL: SESSION_STARTED',
+        category: AuditCategory.TERMINAL,
+        authMethod: user.authMethod,
+        ipAddress: this.getClientIp(client),
+        details: {
           machineId: data.machineId,
           machineName: machine.name,
           ip: machine.ip,
           sessionId,
+          cols: data.cols ?? 80,
+          rows: data.rows ?? 24,
         },
-        user.authMethod,
-        this.getClientIp(client),
-        AuditCategory.TERMINAL,
-      );
+        entities: {
+          users: [user.sub],
+          machines: [data.machineId],
+          recordings: [sessionId],
+        },
+      });
 
       client.emit('security-settings', {
         allowCopyPaste: machine.allowCopyPaste,

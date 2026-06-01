@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LdapService } from './ldap.service';
+import { AuthProvidersService } from './auth-providers.service';
 import { VaultService } from '../vault/vault.service';
 import { OtpLockoutService } from './otp-lockout.service';
 import { AuthMethod } from '@prisma/client';
@@ -12,6 +13,12 @@ import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 describe('AuthService', () => {
   let service: AuthService;
 
+  // Valid UUID format so the LoginDto's regex check in higher-level tests
+  // would accept it; the validateUser method itself doesn't validate the
+  // format but we keep tests consistent with the production wire shape.
+  const LDAP_PROVIDER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const OIDC_PROVIDER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
   const mockUsersService = {
     findOneByEmail: jest.fn(),
     findOneByUsername: jest.fn(),
@@ -20,6 +27,7 @@ describe('AuthService', () => {
     update: jest.fn(),
   };
   const mockLdapService = { authenticate: jest.fn() };
+  const mockProvidersService = { findEnabledById: jest.fn() };
   const mockJwtService = { sign: jest.fn(() => 'mock-token') };
   const mockVaultService = {
     encrypt: jest.fn((v: string) => `enc:${v}`),
@@ -38,6 +46,7 @@ describe('AuthService', () => {
         AuthService,
         { provide: UsersService, useValue: mockUsersService },
         { provide: LdapService, useValue: mockLdapService },
+        { provide: AuthProvidersService, useValue: mockProvidersService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: VaultService, useValue: mockVaultService },
         { provide: OtpLockoutService, useValue: mockOtpLockout },
@@ -82,7 +91,7 @@ describe('AuthService', () => {
       const user = { id: 'u1', email: 'test@local.com', passwordHash: hash, authMethod: AuthMethod.LOCAL };
       mockUsersService.findOneByEmailOrUsername.mockResolvedValue(user);
 
-      const result = await service.validateUser(user.email, password, AuthMethod.LOCAL);
+      const result = await service.validateUser('local', user.email, password);
       expect(result).toBeDefined();
       expect(result.email).toBe(user.email);
       expect(result.passwordHash).toBeUndefined();
@@ -91,15 +100,44 @@ describe('AuthService', () => {
     it('should return null for wrong password', async () => {
       const user = { id: 'u1', email: 'test@local.com', passwordHash: await argon2.hash('correct'), authMethod: AuthMethod.LOCAL };
       mockUsersService.findOneByEmailOrUsername.mockResolvedValue(user);
-      const result = await service.validateUser(user.email, 'wrong', AuthMethod.LOCAL);
+      const result = await service.validateUser('local', user.email, 'wrong');
       expect(result).toBeNull();
     });
 
-    it('should delegate to LDAP for LDAP method', async () => {
+    it('should delegate to LDAP when the provider id resolves to LDAP', async () => {
+      mockProvidersService.findEnabledById.mockResolvedValue({
+        id: LDAP_PROVIDER_ID,
+        name: 'corp',
+        type: 'LDAP',
+        enabled: true,
+      });
       mockLdapService.authenticate.mockResolvedValue({ id: 'u2', email: 'ldap@test.com' });
-      const result = await service.validateUser('ldap@test.com', 'pass', AuthMethod.LDAP);
-      expect(mockLdapService.authenticate).toHaveBeenCalledWith('ldap@test.com', 'pass');
+
+      const result = await service.validateUser(LDAP_PROVIDER_ID, 'ldap@test.com', 'pass');
+      expect(mockLdapService.authenticate).toHaveBeenCalledWith(
+        LDAP_PROVIDER_ID,
+        'ldap@test.com',
+        'pass',
+      );
       expect(result).toBeDefined();
+    });
+
+    it('should refuse password login against an OIDC provider', async () => {
+      mockProvidersService.findEnabledById.mockResolvedValue({
+        id: OIDC_PROVIDER_ID,
+        name: 'kc',
+        type: 'OIDC',
+        enabled: true,
+      });
+      const result = await service.validateUser(OIDC_PROVIDER_ID, 'a@b.com', 'pw');
+      expect(result).toBeNull();
+      expect(mockLdapService.authenticate).not.toHaveBeenCalled();
+    });
+
+    it('should return null when provider id is unknown/disabled', async () => {
+      mockProvidersService.findEnabledById.mockResolvedValue(null);
+      const result = await service.validateUser(LDAP_PROVIDER_ID, 'x@y.com', 'pw');
+      expect(result).toBeNull();
     });
 
     // SECURITY: anti-enumeration — both code paths must take time in the
@@ -109,10 +147,10 @@ describe('AuthService', () => {
       mockUsersService.findOneByEmailOrUsername.mockResolvedValue(null);
 
       // Warm dummy hash (lazy on first miss)
-      await service.validateUser('warmup@nope.com', 'pw', AuthMethod.LOCAL);
+      await service.validateUser('local', 'warmup@nope.com', 'pw');
 
       const t0 = Date.now();
-      const result = await service.validateUser('nope@nope.com', 'pw', AuthMethod.LOCAL);
+      const result = await service.validateUser('local', 'nope@nope.com', 'pw');
       const elapsed = Date.now() - t0;
 
       expect(result).toBeNull();
@@ -121,12 +159,12 @@ describe('AuthService', () => {
 
     it('non-LOCAL user path also runs the dummy verify (≥ 5 ms)', async () => {
       mockUsersService.findOneByEmailOrUsername.mockResolvedValueOnce(null);
-      await service.validateUser('warmup2@nope.com', 'pw', AuthMethod.LOCAL); // warm
+      await service.validateUser('local', 'warmup2@nope.com', 'pw'); // warm
       mockUsersService.findOneByEmailOrUsername.mockResolvedValue({
         id: 'u1', email: 'oidc@test.com', authMethod: AuthMethod.OIDC, passwordHash: null,
       });
       const t0 = Date.now();
-      const result = await service.validateUser('oidc@test.com', 'pw', AuthMethod.LOCAL);
+      const result = await service.validateUser('local', 'oidc@test.com', 'pw');
       const elapsed = Date.now() - t0;
       expect(result).toBeNull();
       expect(elapsed).toBeGreaterThanOrEqual(5);
@@ -141,16 +179,16 @@ describe('AuthService', () => {
 
       // Warm the dummy hash (lazily generated on first miss) before measuring.
       mockUsersService.findOneByEmailOrUsername.mockResolvedValueOnce(null);
-      await service.validateUser('warmup@nope.com', 'pw', AuthMethod.LOCAL);
+      await service.validateUser('local', 'warmup@nope.com', 'pw');
 
       mockUsersService.findOneByEmailOrUsername.mockResolvedValue(user);
       const t0a = Date.now();
-      await service.validateUser(user.email, 'wrong', AuthMethod.LOCAL);
+      await service.validateUser('local', user.email, 'wrong');
       const dExisting = Date.now() - t0a;
 
       mockUsersService.findOneByEmailOrUsername.mockResolvedValue(null);
       const t0b = Date.now();
-      await service.validateUser('nope@nope.com', 'pw', AuthMethod.LOCAL);
+      await service.validateUser('local', 'nope@nope.com', 'pw');
       const dMissing = Date.now() - t0b;
 
       // Both should be in the argon2 ballpark (≥ 5ms even on fast HW).

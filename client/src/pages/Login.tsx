@@ -1,18 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { ShieldCheck, Mail, Lock, LogIn, Database, User as UserIcon, Sun, Moon, Globe } from 'lucide-react';
+import {
+  ShieldCheck,
+  Mail,
+  Lock,
+  LogIn,
+  Database,
+  User as UserIcon,
+  Sun,
+  Moon,
+  Globe,
+  ChevronRight,
+  ArrowLeft,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useNotification } from '../context/NotificationContext';
 import { useLang } from '../context/LangContext';
 import api from '../services/api';
 
+type ProviderType = 'LOCAL' | 'LDAP' | 'OIDC';
+
 interface AuthProvider {
   id: string;
   name: string;
-  type: 'LDAP' | 'OIDC';
+  type: ProviderType;
   enabled: boolean;
+  issuerHost?: string;
 }
+
+const LOCAL_PROVIDER: AuthProvider = {
+  id: 'local',
+  name: 'Local',
+  type: 'LOCAL',
+  enabled: true,
+};
 
 const Login: React.FC = () => {
   const [identifier, setIdentifier] = useState('');
@@ -20,8 +42,8 @@ const Login: React.FC = () => {
   const [otpCode, setOtpCode] = useState('');
   const [requiresOtp, setRequiresOtp] = useState(false);
   const [tempToken, setTempToken] = useState('');
-  const [authMethod, setAuthMethod] = useState<'LOCAL' | 'LDAP'>('LOCAL');
-  const [providers, setProviders] = useState<AuthProvider[]>([]);
+  const [providers, setProviders] = useState<AuthProvider[]>([LOCAL_PROVIDER]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, loginOtp } = useAuth();
@@ -37,11 +59,23 @@ const Login: React.FC = () => {
   const fetchProviders = async () => {
     try {
       const res = await api.get('/auth/providers');
-      setProviders(res.data as AuthProvider[]);
+      const list = res.data as AuthProvider[];
+      // Backend always returns Local first; fall back defensively if it
+      // doesn't (e.g., older API on a partial deploy).
+      const hasLocal = list.some((p) => p.type === 'LOCAL');
+      setProviders(hasLocal ? list : [LOCAL_PROVIDER, ...list]);
+      // Auto-select if only one provider is available — avoids an extra
+      // click on minimal installs.
+      if (list.length === 1) setSelectedProviderId(list[0]!.id);
     } catch (err) {
       console.error('Failed to fetch auth providers', err);
     }
   };
+
+  const selectedProvider = useMemo<AuthProvider | null>(() => {
+    if (!selectedProviderId) return null;
+    return providers.find((p) => p.id === selectedProviderId) ?? null;
+  }, [providers, selectedProviderId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +88,12 @@ const Login: React.FC = () => {
         return;
       }
 
-      const res = await login(identifier, password, authMethod);
+      if (!selectedProvider) {
+        setError(t('login.providerSelect'));
+        return;
+      }
+
+      const res = await login(selectedProvider.id, identifier, password);
       if (res.requiresOtp) {
         setRequiresOtp(true);
         setTempToken(res.tempToken || '');
@@ -76,12 +115,152 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleOidcLogin = () => {
-    window.location.href = '/api/auth/oidc/login';
+  const handleOidcLogin = (provider: AuthProvider) => {
+    window.location.href = `/api/auth/oidc/${provider.id}/login`;
   };
 
-  const isLdapEnabled = providers.some(p => p.type === 'LDAP' && p.enabled);
-  const isOidcEnabled = providers.some(p => p.type === 'OIDC' && p.enabled);
+  const providerIcon = (type: ProviderType) => {
+    if (type === 'LOCAL') return <UserIcon size={18} />;
+    if (type === 'LDAP') return <Database size={18} />;
+    return <Globe size={18} />;
+  };
+
+  const providerTypeLabel = (type: ProviderType) => {
+    return (t(`login.providerType.${type}` as any) as string) || type;
+  };
+
+  const renderProviderPicker = () => (
+    <div className="space-y-4">
+      <p className="t-eyebrow px-1">{t('login.providerSelect')}</p>
+      <ul className="space-y-2" role="list">
+        {providers.map((p) => (
+          <li key={p.id}>
+            <button
+              type="button"
+              onClick={() => {
+                setError('');
+                setSelectedProviderId(p.id);
+                if (p.type === 'OIDC') handleOidcLogin(p);
+              }}
+              className="w-full flex items-center justify-between gap-3 p-4 rounded-lg border border-border-light bg-background-app hover:bg-background-surface hover:border-primary/50 transition-all group text-left"
+            >
+              <span className="flex items-center gap-3">
+                <span className="p-2 rounded-md bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white transition-colors">
+                  {providerIcon(p.type)}
+                </span>
+                <span className="flex flex-col">
+                  <span className="text-sm font-semibold text-text-main">{p.name}</span>
+                  <span className="text-[11px] text-text-secondary">
+                    {providerTypeLabel(p.type)}
+                    {p.issuerHost ? ` · ${p.issuerHost}` : ''}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight size={16} className="text-text-secondary group-hover:text-primary transition-colors" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  const renderCredentialsForm = () => (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedProviderId(null);
+          setError('');
+        }}
+        className="flex items-center gap-2 text-xs font-bold text-text-secondary uppercase tracking-wider hover:text-primary transition-colors"
+      >
+        <ArrowLeft size={14} />
+        {t('login.backToProviders')}
+      </button>
+
+      <div className="flex items-center gap-3 p-3 bg-background-app rounded-lg border border-border-light">
+        <span className="p-2 rounded-md bg-primary/10 text-primary">
+          {providerIcon(selectedProvider!.type)}
+        </span>
+        <div className="flex flex-col">
+          <span className="text-sm font-semibold text-text-main">{selectedProvider!.name}</span>
+          <span className="text-[11px] text-text-secondary">
+            {providerTypeLabel(selectedProvider!.type)}
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="login-identifier" className="t-eyebrow px-1">{t('login.identifier')}</label>
+        <div className="relative group">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
+            <Mail size={16} />
+          </div>
+          <input
+            id="login-identifier"
+            required
+            autoFocus
+            autoComplete="username"
+            className="form-input input-with-icon h-11 text-sm"
+            placeholder={selectedProvider!.type === 'LOCAL'
+              ? t('login.identifierPlaceholder')
+              : t('login.identifierPlaceholderLdap')}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="login-password" className="t-eyebrow px-1">{t('login.password')}</label>
+        <div className="relative group">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
+            <Lock size={16} />
+          </div>
+          <input
+            id="login-password"
+            required
+            type="password"
+            autoComplete="current-password"
+            className="form-input input-with-icon h-11 text-sm"
+            placeholder={t('login.passwordPlaceholder')}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+      </div>
+    </>
+  );
+
+  const renderOtpForm = () => (
+    <div className="space-y-2">
+      <label htmlFor="login-otp" className="t-eyebrow px-1">{t('login.otpCode')}</label>
+      <div className="relative group">
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
+          <ShieldCheck size={16} />
+        </div>
+        <input
+          id="login-otp"
+          required
+          autoFocus
+          autoComplete="one-time-code"
+          inputMode="numeric"
+          pattern="\d{6}"
+          className="form-input input-with-icon h-11 text-center text-lg tracking-[0.5em] font-mono"
+          placeholder="000000"
+          maxLength={6}
+          value={otpCode}
+          onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+        />
+      </div>
+      <p className="text-xs text-text-secondary mt-2 text-center">
+        {t('login.otpHint')}
+      </p>
+    </div>
+  );
+
+  const showCredentialsForm = !requiresOtp && selectedProvider && selectedProvider.type !== 'OIDC';
+  const showProviderPicker = !requiresOtp && !selectedProvider;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background-app bg-composite p-4 relative overflow-hidden transition-colors duration-300">
@@ -112,128 +291,25 @@ const Login: React.FC = () => {
               </div>
             )}
 
-            {!requiresOtp ? (
-              <>
-                {isLdapEnabled && (
-                  <div className="flex p-1 bg-background-app rounded-lg border border-border-light">
-                    <button
-                      type="button"
-                      onClick={() => setAuthMethod('LOCAL')}
-                      aria-pressed={authMethod === 'LOCAL'}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-xs font-bold transition-all ${authMethod === 'LOCAL' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
-                    >
-                      <UserIcon size={14} /> {t('login.methodLocal')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAuthMethod('LDAP')}
-                      aria-pressed={authMethod === 'LDAP'}
-                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-md text-xs font-bold transition-all ${authMethod === 'LDAP' ? 'bg-background-surface text-primary shadow-sm border border-border-light' : 'text-text-secondary hover:text-text-main'}`}
-                    >
-                      <Database size={14} /> {t('login.methodLdap')}
-                    </button>
-                  </div>
+            {showProviderPicker && renderProviderPicker()}
+            {showCredentialsForm && renderCredentialsForm()}
+            {requiresOtp && renderOtpForm()}
+
+            {(showCredentialsForm || requiresOtp) && (
+              <button
+                disabled={loading}
+                type="submit"
+                className="w-full btn-primary h-12 flex items-center justify-center gap-2 shadow-md shadow-primary/20 disabled:opacity-50"
+              >
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <LogIn size={18} />
+                    {requiresOtp ? t('login.verifyOtp') : t('login.submit')}
+                  </>
                 )}
-
-                <div className="space-y-2">
-                  <label htmlFor="login-identifier" className="t-eyebrow px-1">{t('login.identifier')}</label>
-                  <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
-                      <Mail size={16} />
-                    </div>
-                    <input
-                      id="login-identifier"
-                      required
-                      autoComplete={authMethod === 'LOCAL' ? 'username' : 'username'}
-                      className="form-input input-with-icon h-11 text-sm"
-                      placeholder={authMethod === 'LOCAL' ? t('login.identifierPlaceholder') : t('login.identifierPlaceholderLdap')}
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label htmlFor="login-password" className="t-eyebrow px-1">{t('login.password')}</label>
-                  <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
-                      <Lock size={16} />
-                    </div>
-                    <input
-                      id="login-password"
-                      required
-                      type="password"
-                      autoComplete="current-password"
-                      className="form-input input-with-icon h-11 text-sm"
-                      placeholder={t('login.passwordPlaceholder')}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                    />
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="space-y-2">
-                <label htmlFor="login-otp" className="t-eyebrow px-1">{t('login.otpCode')}</label>
-                <div className="relative group">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" aria-hidden="true">
-                    <ShieldCheck size={16} />
-                  </div>
-                  <input
-                    id="login-otp"
-                    required
-                    autoFocus
-                    autoComplete="one-time-code"
-                    inputMode="numeric"
-                    pattern="\d{6}"
-                    className="form-input input-with-icon h-11 text-center text-lg tracking-[0.5em] font-mono"
-                    placeholder="000000"
-                    maxLength={6}
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  />
-                </div>
-                <p className="text-xs text-text-secondary mt-2 text-center">
-                  {t('login.otpHint')}
-                </p>
-              </div>
-            )}
-
-            <button
-              disabled={loading}
-              type="submit"
-              className="w-full btn-primary h-12 flex items-center justify-center gap-2 shadow-md shadow-primary/20 disabled:opacity-50"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <LogIn size={18} />
-                  {requiresOtp ? t('login.verifyOtp') : t('login.submit')}
-                </>
-              )}
-            </button>
-
-            {isOidcEnabled && !requiresOtp && (
-              <div className="space-y-4">
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-border-light"></span>
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase font-bold tracking-widest">
-                    <span className="bg-background-surface px-2 text-text-secondary">{t('login.ssoLabel')}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleOidcLogin}
-                  className="w-full h-11 flex items-center justify-center gap-3 bg-background-app border border-border-light text-text-main text-xs font-bold rounded-lg hover:bg-background-surface hover:border-primary/50 transition-all shadow-sm"
-                >
-                  <Globe size={16} className="text-primary" />
-                  {t('login.ssoButton')}
-                </button>
-              </div>
+              </button>
             )}
 
             {requiresOtp && (

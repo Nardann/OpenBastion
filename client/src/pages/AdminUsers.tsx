@@ -15,7 +15,9 @@ import {
   LogOut,
   FolderPlus,
   ShieldOff,
+  Activity,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useLang } from '../context/LangContext';
 
@@ -40,6 +42,9 @@ interface Group {
 
 const AdminUsers: React.FC = () => {
   const { t } = useLang();
+  const navigate = useNavigate();
+  const viewActivity = (userId: string) =>
+    navigate(`/administration/logs?entityType=user&entityId=${userId}`);
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'groups'>('users');
@@ -292,6 +297,13 @@ const AdminUsers: React.FC = () => {
                             </button>
                           )}
                           <button
+                            onClick={() => viewActivity(user.id)}
+                            className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
+                            title={t('adminUsers.actions.viewActivity')}
+                          >
+                            <Activity size={18} />
+                          </button>
+                          <button
                             onClick={() => revokeUserTokens(user.id)}
                             className="p-2 text-text-secondary hover:text-warning hover:bg-warning/5 rounded-md transition-all"
                             title={t('adminUsers.actions.revokeSessions')}
@@ -375,6 +387,13 @@ const AdminUsers: React.FC = () => {
                     className="flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase bg-background-surface text-text-secondary hover:text-primary hover:border-primary/50 border border-border-light rounded-md transition-all shadow-sm"
                   >
                     <Users size={14} /> {t('adminUsers.manageMembers')}
+                  </button>
+                  <button
+                    onClick={() => navigate(`/administration/logs?entityType=group&entityId=${group.id}`)}
+                    className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
+                    title={t('adminUsers.actions.viewActivity')}
+                  >
+                    <Activity size={16} />
                   </button>
                   <button
                     onClick={() => deleteGroup(group.id)}

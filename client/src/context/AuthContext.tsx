@@ -7,6 +7,10 @@ interface User {
   username?: string;
   role: 'ADMIN' | 'USER';
   authMethod: string;
+  // The OIDC/LDAP provider that owns this account. Null for LOCAL users.
+  // Needed by the sudo modal so an OIDC admin can re-authenticate against
+  // the exact provider that issued their account.
+  authProviderId?: string | null;
   requiresPasswordChange: boolean;
   isOtpEnabled: boolean;
   isAdminMode: boolean;
@@ -15,17 +19,29 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  /**
+   * Multi-provider login. `providerId` is either the literal string
+   * `'local'` (built-in account) or the UUID of an enabled AuthProvider.
+   */
   login: (
+    providerId: string,
     identifier: string,
     pass: string,
-    method: string,
   ) => Promise<{
     requiresOtp: boolean;
     tempToken?: string;
     requiresPasswordChange?: boolean;
   }>;
   loginOtp: (tempToken: string, code: string) => Promise<void>;
-  sudo: (args?: { code?: string; password?: string }) => Promise<void>;
+  /**
+   * Step-up to admin mode. Accepts:
+   *  - `{ code }`               — TOTP (any auth method).
+   *  - `{ password }`           — LOCAL re-prove.
+   *  - `{ identifier, password }` — LDAP re-bind.
+   * OIDC users without OTP must NOT call this — the modal redirects them
+   * to `/api/auth/sudo/oidc/:providerId/start` instead (browser-driven).
+   */
+  sudo: (args?: { code?: string; password?: string; identifier?: string }) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
@@ -58,8 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = async (identifier: string, password: string, authMethod: string) => {
-    const response = await api.post('/auth/login', { identifier, password, authMethod });
+  const login = async (providerId: string, identifier: string, password: string) => {
+    const response = await api.post('/auth/login', { providerId, identifier, password });
     const data = response.data as any;
     if (data.requiresOtp) {
       return { requiresOtp: true, tempToken: data.tempToken };
@@ -73,10 +89,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(response.data.user);
   };
 
-  const sudo = async (args?: { code?: string; password?: string }) => {
-    const body: { code?: string; password?: string } = {};
+  const sudo = async (args?: { code?: string; password?: string; identifier?: string }) => {
+    const body: { code?: string; password?: string; identifier?: string } = {};
     if (args?.code) body.code = args.code;
     if (args?.password) body.password = args.password;
+    if (args?.identifier) body.identifier = args.identifier;
     await api.post('/auth/sudo', body);
     await checkAuth();
   };

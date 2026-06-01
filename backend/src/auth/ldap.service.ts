@@ -21,6 +21,13 @@ interface LdapUser {
   dn?: string;
   mail?: string;
   proxyAddresses?: string | string[];
+  // Display handle attributes — preference order matches AD / OpenLDAP /
+  // Authentik. Falls back to the identifier the user typed at the login
+  // screen if none of these come back.
+  sAMAccountName?: string;
+  uid?: string;
+  cn?: string;
+  displayName?: string;
   [key: string]: unknown;
 }
 
@@ -33,9 +40,22 @@ export class LdapService {
     private usersService: UsersService,
   ) {}
 
-  async authenticate(username: string, pass: string): Promise<unknown> {
-    const provider = await this.authProvidersService.findByType('LDAP');
-    if (!provider) return null;
+  /**
+   * Authenticate against a specific LDAP provider. The caller MUST resolve
+   * the provider id first (login DTO supplies it). We no longer fall back
+   * to "the first enabled LDAP" — that path was ambiguous as soon as two
+   * directories were configured.
+   */
+  async authenticate(
+    providerId: string,
+    username: string,
+    pass: string,
+  ): Promise<unknown> {
+    const provider = await this.authProvidersService.findEnabledById(providerId);
+    if (!provider || provider.type !== 'LDAP') {
+      this.logger.warn(`LDAP provider ${providerId} not found or disabled`);
+      return null;
+    }
 
     const config = provider.config as LdapProviderConfig;
     const escapedUsername = escapeLdapFilter(username);
@@ -78,12 +98,14 @@ export class LdapService {
         });
 
         if (err) {
-          this.logger.error(`LDAP Auth failed for user (redacted): ${err.message}`);
+          this.logger.error(
+            `LDAP auth failed on provider ${provider.name}: ${err.message}`,
+          );
           return resolve(null);
         }
 
         if (ldapUser) {
-          this.logger.log('LDAP Auth successful');
+          this.logger.log(`LDAP auth successful on provider ${provider.name}`);
 
           let email = ldapUser.mail as string | undefined;
           if (!email && ldapUser.proxyAddresses) {
@@ -95,15 +117,23 @@ export class LdapService {
           }
 
           if (!email) {
-            this.logger.error('LDAP User has no email attribute. Access denied.');
+            this.logger.error('LDAP user has no email attribute. Access denied.');
             return resolve(null);
           }
 
           const externalId = ldapUser.dn ?? username;
+          const candidateUsername =
+            (typeof ldapUser.sAMAccountName === 'string' && ldapUser.sAMAccountName.trim())
+            || (typeof ldapUser.uid === 'string' && ldapUser.uid.trim())
+            || (typeof ldapUser.cn === 'string' && ldapUser.cn.trim())
+            || (typeof ldapUser.displayName === 'string' && ldapUser.displayName.trim())
+            || username;
           const user = await this.usersService.findOrCreateExternalUser(
             email,
             externalId,
             AuthMethod.LDAP,
+            provider.id,
+            candidateUsername || null,
           );
           return resolve(user);
         }

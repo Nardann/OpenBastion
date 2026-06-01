@@ -16,13 +16,16 @@ import {
   FolderOpen,
   Fingerprint,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Activity,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useLang } from '../context/LangContext';
 
 const AdminMachines = () => {
   const { t } = useLang();
+  const navigate = useNavigate();
   const [machines, setMachines] = useState<any[]>([]);
   const [machineGroups, setMachineGroups] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'machines' | 'groups'>('machines');
@@ -423,6 +426,13 @@ const AdminMachines = () => {
                           <button onClick={() => openPermissions(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title={t('common.permissions')}>
                             <ShieldCheck size={18} />
                           </button>
+                          <button
+                            onClick={() => navigate(`/administration/logs?entityType=machine&entityId=${machine.id}`)}
+                            className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
+                            title={t('adminMachines.actions.viewActivity')}
+                          >
+                            <Activity size={18} />
+                          </button>
                           <button onClick={() => openEditMachine(machine)} className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all" title={t('common.edit')}>
                             <Edit2 size={18} />
                           </button>
@@ -502,6 +512,13 @@ const AdminMachines = () => {
                     className="flex-1 flex items-center justify-center gap-2 py-2 text-[10px] font-bold uppercase bg-background-surface text-text-secondary hover:text-primary hover:border-primary/50 border border-border-light rounded-md transition-all shadow-sm"
                   >
                     <ShieldCheck size={14} /> {t('common.permissions')}
+                  </button>
+                  <button
+                    onClick={() => navigate(`/administration/logs?entityType=machineGroup&entityId=${group.id}`)}
+                    className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
+                    title={t('adminMachines.actions.viewActivity')}
+                  >
+                    <Activity size={16} />
                   </button>
                   <button
                     onClick={() => openEditGroup(group)}

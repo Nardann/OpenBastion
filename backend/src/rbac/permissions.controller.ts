@@ -10,6 +10,7 @@ import {
   UsePipes,
   ValidationPipe,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../prisma/prisma.service';
@@ -18,11 +19,19 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { CreatePermissionDto } from './dto/permissions.dto';
+import {
+  AuditService,
+  AuditCategory,
+  AuditEntities,
+} from '../audit/audit.service';
 
 @Controller('permissions')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class PermissionsController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   @Get('machine/:machineId')
   @SkipThrottle()
@@ -55,7 +64,7 @@ export class PermissionsController {
   @Post()
   @Roles(Role.ADMIN)
   @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-  async create(@Body() data: CreatePermissionDto) {
+  async create(@Body() data: CreatePermissionDto, @Req() req: any) {
     // SECURITY FIX: Exactly one of userId or groupId must be provided (handled by DTO but good to double check)
     if ((!!data.userId && !!data.groupId) || (!data.userId && !data.groupId)) {
       throw new BadRequestException(
@@ -118,12 +127,60 @@ export class PermissionsController {
         );
     }
 
-    return this.prisma.permission.create({ data });
+    const permission = await this.prisma.permission.create({ data });
+
+    const entities: AuditEntities = { permissions: [permission.id] };
+    if (data.userId) entities.users = [data.userId];
+    if (data.groupId) entities.groups = [data.groupId];
+    if (data.machineId) entities.machines = [data.machineId];
+    if (data.machineGroupId) entities.machineGroups = [data.machineGroupId];
+
+    await this.audit.log({
+      actorId: req.user?.sub ?? null,
+      action: 'PERMISSION: GRANTED',
+      category: AuditCategory.PERMISSION,
+      authMethod: req.user?.authMethod ?? null,
+      ipAddress: req.ip,
+      details: {
+        permissionId: permission.id,
+        level: permission.level,
+        scope: data.machineId ? 'MACHINE' : 'MACHINE_GROUP',
+        target: data.userId ? 'USER' : 'GROUP',
+      },
+      entities,
+    });
+
+    return permission;
   }
 
   @Delete(':id')
   @Roles(Role.ADMIN)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.prisma.permission.delete({ where: { id } });
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    // Read the row before deletion so the audit log knows what was revoked.
+    const existing = await this.prisma.permission.findUnique({ where: { id } });
+    const result = await this.prisma.permission.delete({ where: { id } });
+
+    const entities: AuditEntities = { permissions: [id] };
+    if (existing?.userId) entities.users = [existing.userId];
+    if (existing?.groupId) entities.groups = [existing.groupId];
+    if (existing?.machineId) entities.machines = [existing.machineId];
+    if (existing?.machineGroupId) entities.machineGroups = [existing.machineGroupId];
+
+    await this.audit.log({
+      actorId: req.user?.sub ?? null,
+      action: 'PERMISSION: REVOKED',
+      category: AuditCategory.PERMISSION,
+      authMethod: req.user?.authMethod ?? null,
+      ipAddress: req.ip,
+      details: {
+        permissionId: id,
+        level: existing?.level ?? null,
+        scope: existing?.machineId ? 'MACHINE' : 'MACHINE_GROUP',
+        target: existing?.userId ? 'USER' : 'GROUP',
+      },
+      entities,
+    });
+
+    return result;
   }
 }

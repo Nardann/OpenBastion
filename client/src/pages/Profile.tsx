@@ -14,6 +14,7 @@ import {
   QrCode,
   Smartphone,
   Home,
+  Info,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLang } from '../context/LangContext';
@@ -22,6 +23,11 @@ import api from '../services/api';
 const Profile: React.FC = () => {
   const { user, checkAuth } = useAuth();
   const { t } = useLang();
+  // Identity for LDAP / OIDC users is owned by the upstream directory;
+  // the bastion is a read-only consumer. We use this to disable inputs
+  // AND hide the password change section — backend refuses these
+  // mutations either way (defence in depth on both sides).
+  const isExternalIdentity = user?.authMethod === 'LDAP' || user?.authMethod === 'OIDC';
   const [formData, setFormData] = useState({
     email: '',
     username: '',
@@ -111,6 +117,14 @@ const Profile: React.FC = () => {
     e.preventDefault();
     setError('');
     setSuccess(false);
+
+    // Defence in depth: backend rejects identity edits for external accounts
+    // with a 403, but we shouldn't even let the form submit reach the API
+    // in that case — surface the limitation inline instead.
+    if (isExternalIdentity) {
+      setError(t('profile.account.externalManagedError'));
+      return;
+    }
 
     if (formData.password) {
       if (!formData.currentPassword) {
@@ -314,6 +328,21 @@ const Profile: React.FC = () => {
                 </div>
               )}
 
+              {isExternalIdentity && (
+                <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl flex items-start gap-3 text-primary">
+                  <Info size={20} className="flex-shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold uppercase tracking-wider">
+                      {t('profile.account.externalManagedTitle')}
+                    </p>
+                    <p className="text-xs opacity-90">
+                      <span className="font-mono font-bold">{user?.authMethod}</span>{' '}
+                      — {t('profile.account.externalManagedHint')}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.email')}</label>
@@ -323,7 +352,8 @@ const Profile: React.FC = () => {
                       required
                       type="email"
                       autoComplete="email"
-                      className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                      disabled={isExternalIdentity}
+                      className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                       value={formData.email}
                       onChange={e => setFormData({...formData, email: e.target.value})}
                     />
@@ -337,7 +367,8 @@ const Profile: React.FC = () => {
                     <input
                       type="text"
                       autoComplete="username"
-                      className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                      disabled={isExternalIdentity}
+                      className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                       placeholder={t('profile.account.usernameHint')}
                       value={formData.username}
                       onChange={e => setFormData({...formData, username: e.target.value})}
@@ -346,85 +377,89 @@ const Profile: React.FC = () => {
                 </div>
               </div>
 
-              <div className="pt-6 border-t border-border-light">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-primary mb-6">{t('profile.account.changePassword')}</h4>
+              {!isExternalIdentity && (
+                <div className="pt-6 border-t border-border-light">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-primary mb-6">{t('profile.account.changePassword')}</h4>
 
-                <div className="mb-6 space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.currentPassword')}</label>
-                  <div className="relative">
-                    <Shield size={16} className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
-                    <input
-                      type="password"
-                      autoComplete="current-password"
-                      className={`w-full pl-10 pr-4 py-2 bg-background-app border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all ${error.includes('actuel') ? 'border-red-500' : 'border-border-light'}`}
-                      placeholder={t('profile.account.currentPasswordHint')}
-                      value={formData.currentPassword}
-                      onChange={e => setFormData({...formData, currentPassword: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.newPassword')}</label>
+                  <div className="mb-6 space-y-2">
+                    <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.currentPassword')}</label>
                     <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
+                      <Shield size={16} className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
                       <input
                         type="password"
-                        autoComplete="new-password"
-                        className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
-                        value={formData.password}
-                        onChange={e => setFormData({...formData, password: e.target.value})}
+                        autoComplete="current-password"
+                        className={`w-full pl-10 pr-4 py-2 bg-background-app border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all ${error.includes('actuel') ? 'border-red-500' : 'border-border-light'}`}
+                        placeholder={t('profile.account.currentPasswordHint')}
+                        value={formData.currentPassword}
+                        onChange={e => setFormData({...formData, currentPassword: e.target.value})}
                       />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.confirmPassword')}</label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
-                      <input
-                        type="password"
-                        autoComplete="new-password"
-                        className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
-                        value={formData.confirmPassword}
-                        onChange={e => setFormData({...formData, confirmPassword: e.target.value})}
-                      />
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.newPassword')}</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                          value={formData.password}
+                          onChange={e => setFormData({...formData, password: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">{t('profile.account.confirmPassword')}</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3 h-4 w-4 text-text-secondary" />
+                        <input
+                          type="password"
+                          autoComplete="new-password"
+                          className="w-full pl-10 pr-4 py-2 bg-background-app border border-border-light rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                          value={formData.confirmPassword}
+                          onChange={e => setFormData({...formData, confirmPassword: e.target.value})}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              <div className="flex justify-end pt-4 gap-4">
-                {showConfirm ? (
-                  <div className="flex items-center gap-4 bg-primary/5 p-2 pr-4 rounded-xl border border-primary/20 animate-in zoom-in-95">
-                    <p className="text-xs font-bold text-primary flex items-center gap-2">
-                      <AlertTriangle size={14} /> {t('profile.account.confirmChange')}
-                    </p>
+              {!isExternalIdentity && (
+                <div className="flex justify-end pt-4 gap-4">
+                  {showConfirm ? (
+                    <div className="flex items-center gap-4 bg-primary/5 p-2 pr-4 rounded-xl border border-primary/20 animate-in zoom-in-95">
+                      <p className="text-xs font-bold text-primary flex items-center gap-2">
+                        <AlertTriangle size={14} /> {t('profile.account.confirmChange')}
+                      </p>
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-primary text-white text-xs px-4 py-2 rounded-lg font-bold hover:bg-primary-hover transition-all"
+                      >
+                        {t('profile.account.saveYes')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirm(false)}
+                        className="text-text-secondary text-xs font-bold hover:text-text-main"
+                      >
+                        {t('profile.account.saveNo')}
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      type="submit"
                       disabled={loading}
-                      className="bg-primary text-white text-xs px-4 py-2 rounded-lg font-bold hover:bg-primary-hover transition-all"
+                      type="submit"
+                      className="btn-primary flex items-center gap-2 disabled:opacity-50"
                     >
-                      {t('profile.account.saveYes')}
+                      {loading ? t('profile.account.saving') : <><Save size={18} /> {t('profile.account.save')}</>}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowConfirm(false)}
-                      className="text-text-secondary text-xs font-bold hover:text-text-main"
-                    >
-                      {t('profile.account.saveNo')}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    disabled={loading}
-                    type="submit"
-                    className="btn-primary flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {loading ? t('profile.account.saving') : <><Save size={18} /> {t('profile.account.save')}</>}
-                  </button>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </form>
           </div>
         </div>

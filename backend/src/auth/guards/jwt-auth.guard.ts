@@ -75,6 +75,10 @@ export class JwtAuthGuard implements CanActivate {
       username: user.username,
       role: user.role,
       authMethod: user.authMethod,
+      // Needed by the sudo modal: an OIDC admin without OTP must be
+      // redirected to `/auth/sudo/oidc/:providerId/start`, which only
+      // works if the UI knows which provider provisioned them.
+      authProviderId: user.authProviderId ?? null,
       requiresPasswordChange: user.requiresPasswordChange,
       isOtpEnabled: user.isOtpEnabled,
       isAdminMode: !!payload.isAdminMode,

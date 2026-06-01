@@ -22,6 +22,12 @@ describe('UsersService', () => {
       providers: [
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
+        // UsersService now depends on AuditService for JIT group sync;
+        // stub it out — these specs don't exercise that path.
+        {
+          provide: (await import('../audit/audit.service')).AuditService,
+          useValue: { log: jest.fn(), logAction: jest.fn() },
+        },
       ],
     }).compile();
 

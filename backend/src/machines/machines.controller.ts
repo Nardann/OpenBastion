@@ -26,6 +26,7 @@ import { Role, AccessLevel, Protocol } from '@prisma/client';
 import { CreateMachineDto, UpdateMachineDto } from '../common/dto/security.dto';
 import { AssignMachineGroupDto } from '../common/dto/machine-groups.dto';
 import { ConfigService } from '../config/config.service';
+import { AuditService, AuditCategory } from '../audit/audit.service';
 
 const RDP_PROTOCOLS = [Protocol.RDP, Protocol.VNC];
 
@@ -35,6 +36,7 @@ export class MachinesController {
   constructor(
     private readonly machinesService: MachinesService,
     private readonly config: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   private assertRdpAllowed(protocol?: string) {
@@ -47,7 +49,7 @@ export class MachinesController {
 
   @Post()
   @Roles(Role.ADMIN)
-  create(@Body() body: CreateMachineDto) {
+  async create(@Body() body: CreateMachineDto, @Req() req: any) {
     this.assertRdpAllowed(body.protocol);
     const { username, password, privateKey, ...machineData } = body;
     const secretData: {
@@ -58,7 +60,33 @@ export class MachinesController {
     if (password) secretData.password = password;
     if (privateKey) secretData.privateKey = privateKey;
 
-    return this.machinesService.createMachine(machineData as any, secretData);
+    const machine = await this.machinesService.createMachine(
+      machineData as any,
+      secretData,
+    );
+
+    await this.audit.log({
+      actorId: req.user?.sub ?? null,
+      action: 'MACHINE: CREATED',
+      category: AuditCategory.MACHINE,
+      authMethod: req.user?.authMethod ?? null,
+      ipAddress: req.ip,
+      details: {
+        machineId: machine.id,
+        name: machine.name,
+        ip: machine.ip,
+        port: machine.port,
+        protocol: machine.protocol,
+        hasPrivateKey: !!privateKey,
+        sshUsername: username,
+      },
+      entities: {
+        machines: [machine.id],
+        ...(machine.machineGroupId ? { machineGroups: [machine.machineGroupId] } : {}),
+      },
+    });
+
+    return machine;
   }
 
   @Post('probe-fingerprint')
@@ -200,23 +228,65 @@ export class MachinesController {
 
   @Patch(':id')
   @Roles(Role.ADMIN)
-  update(
+  async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateMachineDto,
+    @Req() req: any,
   ) {
     this.assertRdpAllowed(body.protocol);
-    return this.machinesService.updateMachine(id, body);
+    const result = await this.machinesService.updateMachine(id, body);
+
+    // List fields touched (without their values — values may contain
+    // secrets that the interceptor already strips, but we don't want them
+    // duplicated here either).
+    const fields = Object.keys(body);
+
+    await this.audit.log({
+      actorId: req.user?.sub ?? null,
+      action: 'MACHINE: UPDATED',
+      category: AuditCategory.MACHINE,
+      authMethod: req.user?.authMethod ?? null,
+      ipAddress: req.ip,
+      details: { machineId: id, name: result.name, fields },
+      entities: {
+        machines: [id],
+        ...(result.machineGroupId ? { machineGroups: [result.machineGroupId] } : {}),
+      },
+    });
+
+    return result;
   }
 
   @Patch(':id/assign-group')
   @Roles(Role.ADMIN)
-  assignToGroup(
+  async assignToGroup(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: AssignMachineGroupDto,
+    @Req() req: any,
   ) {
-    return this.machinesService.updateMachine(id, {
+    const result = await this.machinesService.updateMachine(id, {
       machineGroupId: body.machineGroupId ?? null,
     });
+
+    await this.audit.log({
+      actorId: req.user?.sub ?? null,
+      action: body.machineGroupId
+        ? 'MACHINE: ASSIGNED_TO_GROUP'
+        : 'MACHINE: REMOVED_FROM_GROUP',
+      category: AuditCategory.MACHINE,
+      authMethod: req.user?.authMethod ?? null,
+      ipAddress: req.ip,
+      details: {
+        machineId: id,
+        machineGroupId: body.machineGroupId ?? null,
+      },
+      entities: {
+        machines: [id],
+        ...(body.machineGroupId ? { machineGroups: [body.machineGroupId] } : {}),
+      },
+    });
+
+    return result;
   }
 
   @Get()
@@ -234,7 +304,19 @@ export class MachinesController {
 
   @Delete(':id')
   @Roles(Role.ADMIN)
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.machinesService.deleteMachine(id);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    const result = await this.machinesService.deleteMachine(id);
+
+    await this.audit.log({
+      actorId: req.user?.sub ?? null,
+      action: 'MACHINE: DELETED',
+      category: AuditCategory.MACHINE,
+      authMethod: req.user?.authMethod ?? null,
+      ipAddress: req.ip,
+      details: { machineId: id, name: (result as any)?.name ?? null },
+      entities: { machines: [id] },
+    });
+
+    return result;
   }
 }
