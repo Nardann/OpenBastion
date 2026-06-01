@@ -62,6 +62,30 @@ export class LdapProviderConfigDto {
   @ValidateNested()
   @Type(() => LdapTlsOptionsDto)
   tlsOptions?: LdapTlsOptionsDto;
+
+  // Group sync — see LdapProviderConfig for semantics.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9_\-]+$/, { message: 'groupsAttribute invalide' })
+  groupsAttribute?: string;
+
+  // Reverse-lookup fallback (used when `groupsAttribute` is empty on the
+  // user entry — typical of OpenLDAP without the memberof overlay).
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  @Matches(/^[A-Za-z0-9 ,._=\-]+$/, { message: 'groupsSearchBase invalide' })
+  groupsSearchBase?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  groupsSearchFilter?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  syncGroups?: boolean;
 }
 
 export class OidcProviderConfigDto {

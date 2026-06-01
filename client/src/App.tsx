@@ -25,7 +25,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
   const { t } = useLang();
   const [sudoCode, setSudoCode] = React.useState('');
   const [sudoPassword, setSudoPassword] = React.useState('');
-  const [sudoIdentifier, setSudoIdentifier] = React.useState('');
   const [elevating, setElevating] = React.useState(false);
   const [error, setError] = React.useState('');
 
@@ -70,16 +69,15 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
       setError('');
       setElevating(true);
       try {
-        const args: { code?: string; password?: string; identifier?: string } = {};
+        const args: { code?: string; password?: string } = {};
         if (sudoMode === 'OTP' && sudoCode.trim()) args.code = sudoCode.trim();
         if (sudoMode === 'LOCAL_PASSWORD' && sudoPassword) args.password = sudoPassword;
-        if (sudoMode === 'LDAP_REBIND') {
-          if (sudoIdentifier) args.identifier = sudoIdentifier;
-          if (sudoPassword) args.password = sudoPassword;
-        }
+        if (sudoMode === 'LDAP_REBIND' && sudoPassword) args.password = sudoPassword;
+        // Note: no `identifier` field sent. The backend reads it from
+        // the JWT-bound user record so a caller can't pivot to another
+        // LDAP account by typing a colleague's credentials.
         await sudo(args);
         setSudoPassword('');
-        setSudoIdentifier('');
       } catch (err: any) {
         setError(err.response?.data?.message || t('common.error'));
       } finally {
@@ -148,19 +146,19 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
               {sudoMode === 'LDAP_REBIND' && (
                 <div className="space-y-2">
                   <label className="t-eyebrow px-1">{t('sudo.ldapIdentifierLabel')}</label>
-                  <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
-                      <UserIcon size={16} />
-                    </div>
-                    <input
-                      required
-                      autoFocus
-                      autoComplete="username"
-                      className="form-input input-with-icon h-11"
-                      placeholder={t('sudo.ldapIdentifierPlaceholder')}
-                      value={sudoIdentifier}
-                      onChange={(e) => setSudoIdentifier(e.target.value)}
-                    />
+                  {/*
+                   * Read-only display of the stored identifier — the
+                   * backend uses this exact handle for the LDAP re-bind
+                   * regardless of what the client sends, so showing
+                   * the user *what* will be checked is honest and
+                   * removes the temptation to type someone else's
+                   * username.
+                   */}
+                  <div className="flex items-center gap-3 px-3 py-2 bg-background-app border border-border-light rounded-lg">
+                    <UserIcon size={16} className="text-text-secondary" />
+                    <span className="text-sm font-mono text-text-main">
+                      {user.username || user.email}
+                    </span>
                   </div>
                 </div>
               )}
@@ -190,7 +188,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
                   ) : (
                     <input
                       required
-                      autoFocus={sudoMode === 'LOCAL_PASSWORD'}
+                      autoFocus={sudoMode === 'LOCAL_PASSWORD' || sudoMode === 'LDAP_REBIND'}
                       type="password"
                       autoComplete="current-password"
                       className="form-input input-with-icon h-11"

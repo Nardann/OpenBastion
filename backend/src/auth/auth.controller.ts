@@ -428,28 +428,40 @@ export class AuthController {
       if (!ok) throw new BadRequestException('Mot de passe incorrect');
       sudoProof = 'PASSWORD';
     } else if (user.authMethod === 'LDAP') {
-      if (!body.identifier || !body.password) {
-        throw new BadRequestException(
-          'Identifiant et mot de passe LDAP requis pour entrer en mode admin',
-        );
+      if (!body.password) {
+        throw new BadRequestException('Mot de passe LDAP requis');
       }
       if (!user.authProviderId) {
         throw new ForbiddenException(
           'Compte LDAP sans provider rattaché — activez l\'OTP',
         );
       }
+      // SECURITY: the identifier comes from the JWT-bound user record,
+      // NOT from the request body. Reading it from the body would let
+      // an authenticated user re-bind as a *different* LDAP account
+      // (their colleague's, say) and grant sudo to their own local
+      // bastion id — the post-bind id-match check below would have
+      // caught it, but defense in depth: make the misuse impossible to
+      // express. Prefer the stored handle (sAMAccountName / uid)
+      // because that's what the LDAP search filter expects; fall back
+      // to email for legacy users whose handle is null.
+      const identifier = user.username ?? user.email;
+      if (!identifier) {
+        throw new ForbiddenException(
+          'Compte LDAP sans identifiant utilisable — activez l\'OTP',
+        );
+      }
       const bound = await this.ldapService.authenticate(
         user.authProviderId,
-        body.identifier,
+        identifier,
         body.password,
       );
       if (!bound) {
-        throw new BadRequestException('Identifiants LDAP invalides');
+        throw new BadRequestException('Mot de passe LDAP invalide');
       }
-      // The LDAP bind succeeded — but it may be for ANOTHER user in the
-      // directory (someone typing their colleague's credentials). Match
-      // by id; refuse otherwise. Audit the attempt either way so admins
-      // see cross-account probes.
+      // Defence in depth: even with our own identifier, a misconfigured
+      // search filter could resolve to a different DN. Refuse + audit
+      // if the bound user is not who we asked for.
       if ((bound as { id?: string }).id !== user.id) {
         await this.auditService.log({
           actorId: user.id,
@@ -457,11 +469,18 @@ export class AuthController {
           category: AuditCategory.AUTH,
           authMethod: 'LDAP' as any,
           ipAddress: req.ip,
-          details: { calledBy: user.id, boundId: (bound as any).id },
-          entities: { users: [user.id], ...(user.authProviderId ? { providers: [user.authProviderId] } : {}) },
+          details: {
+            calledBy: user.id,
+            boundId: (bound as any).id,
+            identifierUsed: identifier,
+          },
+          entities: {
+            users: [user.id],
+            ...(user.authProviderId ? { providers: [user.authProviderId] } : {}),
+          },
         });
         throw new ForbiddenException(
-          'Ces identifiants LDAP ne correspondent pas à votre compte',
+          'Ré-authentification LDAP impossible pour ce compte',
         );
       }
       sudoProof = 'LDAP_REBIND';

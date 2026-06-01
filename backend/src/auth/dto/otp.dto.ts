@@ -23,17 +23,15 @@ export class SudoDto {
   // get the elevated isAdminMode token. The accepted proof depends on the
   // account's auth method:
   //   - LOCAL: `password` (current local password)
-  //   - LDAP:  `identifier` + `password` re-bound against the directory
+  //   - LDAP:  `password` only — the backend uses the JWT's stored
+  //            identifier so the caller can't pivot to another LDAP
+  //            account by typing different credentials.
   //   - OIDC:  this endpoint is NOT used. The browser is redirected to
   //            `GET /auth/sudo/oidc/:providerId/start` instead, which does
   //            an OIDC handshake with `prompt=login` for a fresh proof.
   @IsOptional()
   @IsString()
   password?: string;
-
-  @IsOptional()
-  @IsString()
-  identifier?: string;
 }
 
 export class VerifyOtpDto {

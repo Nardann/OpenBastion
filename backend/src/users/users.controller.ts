@@ -87,6 +87,27 @@ export class UsersController {
     @Body() body: UpdateUserDto,
     @Req() req: any,
   ) {
+    // SECURITY: identity fields (email, username, password) of LDAP /
+    // OIDC users are owned by the upstream directory or IdP. Even an
+    // admin must not be able to overwrite them from the bastion — at
+    // best the change drifts until the next login, at worst it
+    // shadows the real account. Role + group membership stay editable
+    // because they are bastion-local concepts.
+    const target = await this.usersService.findOneById(id);
+    if (!target) throw new ForbiddenException('Utilisateur introuvable');
+
+    if (target.authMethod !== AuthMethod.LOCAL) {
+      const restricted = ['email', 'username', 'password'] as const;
+      const attempted = restricted.filter(
+        (k) => (body as any)[k] !== undefined,
+      );
+      if (attempted.length > 0) {
+        throw new ForbiddenException(
+          `Le profil d'un compte ${target.authMethod} est géré par le fournisseur d'identité et ne peut pas être modifié ici (champs refusés: ${attempted.join(', ')})`,
+        );
+      }
+    }
+
     const result = await this.usersService.update(id, body);
 
     await this.auditService.logAction(

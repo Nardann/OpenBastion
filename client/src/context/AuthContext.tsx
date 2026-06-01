@@ -35,13 +35,14 @@ interface AuthContextType {
   loginOtp: (tempToken: string, code: string) => Promise<void>;
   /**
    * Step-up to admin mode. Accepts:
-   *  - `{ code }`               — TOTP (any auth method).
-   *  - `{ password }`           — LOCAL re-prove.
-   *  - `{ identifier, password }` — LDAP re-bind.
+   *  - `{ code }`     — TOTP (any auth method).
+   *  - `{ password }` — LOCAL password OR LDAP re-bind password. For
+   *                     LDAP the backend uses the JWT-bound identifier,
+   *                     never one supplied by the client.
    * OIDC users without OTP must NOT call this — the modal redirects them
    * to `/api/auth/sudo/oidc/:providerId/start` instead (browser-driven).
    */
-  sudo: (args?: { code?: string; password?: string; identifier?: string }) => Promise<void>;
+  sudo: (args?: { code?: string; password?: string }) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
 }
@@ -89,11 +90,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(response.data.user);
   };
 
-  const sudo = async (args?: { code?: string; password?: string; identifier?: string }) => {
-    const body: { code?: string; password?: string; identifier?: string } = {};
+  const sudo = async (args?: { code?: string; password?: string }) => {
+    const body: { code?: string; password?: string } = {};
     if (args?.code) body.code = args.code;
     if (args?.password) body.password = args.password;
-    if (args?.identifier) body.identifier = args.identifier;
     await api.post('/auth/sudo', body);
     await checkAuth();
   };

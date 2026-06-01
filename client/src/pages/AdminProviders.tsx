@@ -25,6 +25,14 @@ interface LdapConfig {
   bindPassword?: string;
   searchFilter?: string;
   isActiveDirectory?: boolean;
+  /** Attribute on user entry holding group memberships. Default: `memberOf`. */
+  groupsAttribute?: string;
+  /** Subtree for reverse group search (fallback when memberOf is empty). */
+  groupsSearchBase?: string;
+  /** Filter for the reverse search. {{userDn}} is substituted. */
+  groupsSearchFilter?: string;
+  /** Auto-create + attach groups from LDAP on every login. Default: true. */
+  syncGroups?: boolean;
 }
 
 interface OidcConfig {
@@ -59,6 +67,8 @@ const EMPTY_LDAP: LdapConfig = {
   bindDn: '',
   bindPassword: '',
   searchFilter: '(uid={{username}})',
+  groupsAttribute: 'memberOf',
+  syncGroups: true,
 };
 
 const EMPTY_OIDC: OidcConfig = {
@@ -451,6 +461,49 @@ const ProviderEditorModal: React.FC<EditorProps> = ({ editor, saving, onChange, 
                 value={editor.config.bindPassword ?? ''}
                 onChange={(v) => updateConfig({ bindPassword: v })}
               />
+
+              <div className="p-4 border border-primary/20 bg-primary/5 rounded-lg space-y-4">
+                <p className="text-xs font-bold uppercase tracking-widest text-primary">
+                  {t('adminProviders.ldap.groupsSection')}
+                </p>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 w-4 h-4 accent-primary"
+                    checked={editor.config.syncGroups !== false}
+                    onChange={(e) => updateConfig({ syncGroups: e.target.checked })}
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-text-main">
+                      {t('adminProviders.ldap.syncGroupsLabel')}
+                    </p>
+                    <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
+                      {t('adminProviders.ldap.syncGroupsHint')}
+                    </p>
+                  </div>
+                </label>
+                <ConfigInput
+                  label={t('adminProviders.ldap.groupsAttribute')}
+                  placeholder="memberOf"
+                  value={editor.config.groupsAttribute ?? 'memberOf'}
+                  onChange={(v) => updateConfig({ groupsAttribute: v })}
+                  hint={t('adminProviders.ldap.groupsAttributeHint')}
+                />
+                <ConfigInput
+                  label={t('adminProviders.ldap.groupsSearchBase')}
+                  placeholder="ou=groups,dc=domain,dc=local"
+                  value={editor.config.groupsSearchBase ?? ''}
+                  onChange={(v) => updateConfig({ groupsSearchBase: v })}
+                  hint={t('adminProviders.ldap.groupsSearchBaseHint')}
+                />
+                <ConfigInput
+                  label={t('adminProviders.ldap.groupsSearchFilter')}
+                  placeholder="(&(objectClass=groupOfNames)(member={{userDn}}))"
+                  value={editor.config.groupsSearchFilter ?? ''}
+                  onChange={(v) => updateConfig({ groupsSearchFilter: v })}
+                  hint={t('adminProviders.ldap.groupsSearchFilterHint')}
+                />
+              </div>
             </>
           ) : (
             <>

@@ -11,7 +11,9 @@ jest.mock('ldapauth-fork', () => {
   }));
 });
 
-import * as LdapAuth from 'ldapauth-fork';
+// Default import to match the production module (the `import * as` form
+// returns a namespace object whose `new` invocation throws at runtime).
+import LdapAuth from 'ldapauth-fork';
 
 describe('LdapService', () => {
   let service: LdapService;
@@ -112,12 +114,16 @@ describe('LdapService', () => {
     const result = await service.authenticate(PROVIDER_ID, 'user', 'pass');
     expect(result).toEqual(provisionedUser);
     // Provider id is now forwarded to JIT provisioning so the user gets
-    // anchored to the directory it came from.
+    // anchored to the directory it came from. The 5th argument is the
+    // display handle the service extracted (sAMAccountName / uid /
+    // cn / displayName) — here the LDAP user has no handle attribute,
+    // so we fall back to the identifier they typed at login.
     expect(mockUsersService.findOrCreateExternalUser).toHaveBeenCalledWith(
       'user@test.com',
       ldapUser.dn,
       'LDAP',
       PROVIDER_ID,
+      'user',
     );
   });
 

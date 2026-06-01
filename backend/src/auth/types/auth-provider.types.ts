@@ -9,6 +9,38 @@ export interface LdapProviderConfig {
     rejectUnauthorized?: boolean;
     ca?: string;
   };
+  /**
+   * Attribute on the user entry that carries group memberships.
+   * Default `memberOf` covers Active Directory + OpenLDAP with the
+   * `memberof` overlay. When the attribute is empty or missing on the
+   * authenticated user, we fall back to a reverse search on
+   * `groupsSearchFilter` so deployments without the overlay still get
+   * group sync for free.
+   */
+  groupsAttribute?: string;
+  /**
+   * Subtree to search for groups in the reverse-lookup fallback (used
+   * when the `groupsAttribute` returned nothing). Optional — defaults
+   * to `searchBase`. Restrict it to e.g. `ou=groups,dc=corp,dc=local`
+   * if you have a dedicated groups OU and want to keep the search
+   * narrow.
+   */
+  groupsSearchBase?: string;
+  /**
+   * LDAP filter for the reverse group search. `{{userDn}}` is
+   * substituted with the authenticated user's full DN (LDAP-escaped).
+   * Default: `(&(objectClass=groupOfNames)(member={{userDn}}))` which
+   * matches the standard OpenLDAP `groupOfNames` schema. AD admins
+   * typically want `(&(objectClass=group)(member={{userDn}}))`.
+   */
+  groupsSearchFilter?: string;
+  /**
+   * When true (default), every successful LDAP login parses the
+   * configured group attribute, creates missing groups in the bastion,
+   * and attaches the user to them. Membership is **additive** — locally
+   * added groups stay attached even if the directory doesn't list them.
+   */
+  syncGroups?: boolean;
 }
 
 export interface OidcProviderConfig {
