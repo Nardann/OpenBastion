@@ -148,6 +148,8 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         role: dbUser.role,
         authMethod: dbUser.authMethod,
         isAdminMode: !!payload.isAdminMode,
+        // SECURITY (audit-2026-06): see ssh.gateway.ts for rationale.
+        tokenVersion: dbUser.tokenVersion,
       };
 
       const currentSessions = this.userSessions.get(dbUser.id) || 0;
@@ -269,32 +271,58 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         4 * 60 * 60 * 1000,
       ); // 4h
 
-      // SECURITY (F-02): periodic RBAC re-check, same rationale as the
-      // SSH gateway. RDP is even more affected because the client mostly
-      // observes (mouse + keyboard input is sparse); without this poll a
-      // revoked viewer keeps watching the desktop indefinitely.
+      // SECURITY (F-02 + audit-2026-06): periodic re-check of BOTH the
+      // user's session validity (`tokenVersion`) and their RBAC access
+      // on the target. RDP is even more affected than SSH because the
+      // client mostly observes — without this poll a revoked viewer
+      // keeps watching the desktop indefinitely. See ssh.gateway.ts for
+      // the full rationale on the tokenVersion arm.
       const accessPoll = setInterval(async () => {
         const session = this.sessions.get(client.id);
         if (!session) return;
         try {
-          const stillAllowed = await this.rbacService.hasAccess(
-            user.sub,
-            session.machineId,
-            AccessLevel.OPERATOR,
-          );
+          const dbUser = await this.usersService.findOneById(user.sub);
+          const tokenRevoked =
+            !dbUser || dbUser.tokenVersion !== client.data.user.tokenVersion;
+
+          const stillAllowed = tokenRevoked
+            ? false
+            : await this.rbacService.hasAccess(
+                user.sub,
+                session.machineId,
+                AccessLevel.OPERATOR,
+              );
           session.accessCache = { allowed: stillAllowed, lastChecked: Date.now() };
-          if (!stillAllowed) {
+
+          if (tokenRevoked || !stillAllowed) {
+            const reason = tokenRevoked ? 'token_revoke' : 'rbac_revoke';
             this.logger.warn(
-              `RBAC revocation detected for RDP user=${user.sub} machine=${session.machineId} — closing session`,
+              `RDP session terminated (${reason}) for user=${user.sub} machine=${session.machineId}`,
             );
-            client.emit('error', 'Access revoked');
+            client.emit('error', tokenRevoked ? 'Session revoked' : 'Access revoked');
             session.socket.destroy();
             this.sessions.delete(client.id);
+            void this.auditService
+              .log({
+                actorId: session.userId,
+                action: tokenRevoked
+                  ? 'RDP: SESSION_KILLED_TOKEN_REVOKE'
+                  : 'RDP: SESSION_KILLED_RBAC_REVOKE',
+                category: AuditCategory.TERMINAL,
+                authMethod: user.authMethod,
+                ipAddress: this.getClientIp(client),
+                details: { reason },
+                entities: {
+                  users: [session.userId],
+                  machines: [session.machineId],
+                },
+              })
+              .catch((e) => this.logger.error('Failed to audit RDP session kill', e));
             client.disconnect();
           }
         } catch (e) {
           this.logger.warn(
-            `RDP RBAC poll failed (transient): ${(e as Error).message}`,
+            `RDP access poll failed (transient): ${(e as Error).message}`,
           );
         }
       }, this.RBAC_POLL_INTERVAL_MS);

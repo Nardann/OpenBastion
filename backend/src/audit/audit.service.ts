@@ -88,7 +88,83 @@ export class AuditService {
       .digest();
   }
 
+  /**
+   * Canonical JSON serializer — sorts object keys recursively before
+   * stringifying. Required because PostgreSQL JSONB does NOT preserve
+   * the insertion order of object keys, so a row written with
+   * `{a:1, b:2}` may be read back as `{b:2, a:1}`. Without canonical
+   * order, `verifyIntegrity()` would flag perfectly intact rows as
+   * tampered (audit-2026-06 finding #3).
+   *
+   * Arrays preserve their order (Postgres JSONB does too); only object
+   * key order is normalised. `Date` instances are converted to ISO
+   * strings so they round-trip cleanly through JSONB.
+   */
+  private canonicalStringify(value: unknown): string {
+    if (value === null || value === undefined) return 'null';
+    if (value instanceof Date) return JSON.stringify(value.toISOString());
+    const t = typeof value;
+    if (t === 'string' || t === 'number' || t === 'boolean') {
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+      return '[' + value.map((v) => this.canonicalStringify(v)).join(',') + ']';
+    }
+    if (t === 'object') {
+      const obj = value as Record<string, unknown>;
+      const keys = Object.keys(obj).sort();
+      return (
+        '{' +
+        keys
+          .map(
+            (k) =>
+              JSON.stringify(k) + ':' + this.canonicalStringify(obj[k]),
+          )
+          .join(',') +
+        '}'
+      );
+    }
+    return 'null';
+  }
+
   private computeHmac(entry: {
+    id: string;
+    action: string;
+    userId: string | null;
+    timestamp: Date;
+    category: string | null;
+    ipAddress: string | null;
+    metadata: any;
+    userSnapshot: any;
+  }): string {
+    // Canonical JSON: object keys sorted recursively. See
+    // `canonicalStringify` for the full rationale.
+    const payload = this.canonicalStringify({
+      id: entry.id,
+      action: entry.action,
+      userId: entry.userId ?? null,
+      timestamp: entry.timestamp.toISOString(),
+      category: entry.category ?? null,
+      ipAddress: entry.ipAddress ?? null,
+      metadata: entry.metadata ?? null,
+      userSnapshot: entry.userSnapshot ?? null,
+    });
+    return crypto.createHmac('sha256', this.hmacKey).update(payload).digest('hex');
+  }
+
+  /**
+   * Legacy HMAC algorithm (pre-audit-2026-06): plain `JSON.stringify`
+   * with no key sorting. Kept ONLY so `verifyIntegrity` can validate
+   * rows written before the canonical fix without flagging them as
+   * tampered. New writes always use `computeHmac` above.
+   *
+   * The legacy algorithm is technically vulnerable to false positives
+   * (JSONB key reorder), but a row that successfully verified under
+   * the legacy code path before the upgrade still verifies under the
+   * legacy fallback after the upgrade — the integrity guarantee is
+   * preserved across the boundary, and nothing weakens.
+   */
+  private computeLegacyHmac(entry: {
     id: string;
     action: string;
     userId: string | null;
@@ -535,6 +611,7 @@ export class AuditService {
     checked: number;
     tampered: string[];
     nullHmac: number;
+    legacyHmac: number;
   }> {
     const logs = await this.prisma.auditLog.findMany({
       orderBy: { timestamp: 'desc' },
@@ -543,13 +620,14 @@ export class AuditService {
 
     const tampered: string[] = [];
     let nullHmac = 0;
+    let legacyHmac = 0;
 
     for (const log of logs) {
       if (!log.hmac) {
         nullHmac++;
         continue;
       }
-      const expected = this.computeHmac({
+      const input = {
         id: log.id,
         action: log.action,
         userId: log.userId ?? null,
@@ -558,12 +636,23 @@ export class AuditService {
         ipAddress: log.ipAddress ?? null,
         metadata: log.metadata ?? null,
         userSnapshot: log.userSnapshot ?? null,
-      });
-      if (expected !== log.hmac) {
-        tampered.push(log.id);
+      };
+      // Try the canonical algorithm first (post-audit-2026-06). If it
+      // doesn't match, fall back to the legacy non-canonical algorithm
+      // so rows written before the upgrade still verify cleanly. Only
+      // when BOTH fail do we flag the row as tampered.
+      const expectedCanonical = this.computeHmac(input);
+      if (expectedCanonical === log.hmac) continue;
+
+      const expectedLegacy = this.computeLegacyHmac(input);
+      if (expectedLegacy === log.hmac) {
+        legacyHmac++;
+        continue;
       }
+
+      tampered.push(log.id);
     }
 
-    return { checked: logs.length, tampered, nullHmac };
+    return { checked: logs.length, tampered, nullHmac, legacyHmac };
   }
 }

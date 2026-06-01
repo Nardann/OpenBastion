@@ -156,6 +156,13 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         role: dbUser.role,
         authMethod: dbUser.authMethod,
         isAdminMode: !!payload.isAdminMode,
+        // SECURITY (audit-2026-06): freeze the tokenVersion observed at
+        // connect time so the periodic accessPoll below can compare it
+        // to the live DB value and kill the WS when an admin runs
+        // `POST /users/:id/revoke-tokens` mid-session. Without this,
+        // HTTP requests get rejected with 401 but the open SSH/RDP
+        // terminal keeps streaming.
+        tokenVersion: dbUser.tokenVersion,
       };
 
       // SECURITY FIX: Rate limit sessions per user to prevent resource exhaustion
@@ -316,25 +323,41 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         4 * 60 * 60 * 1000,
       ); // 4 hours
 
-      // SECURITY (F-02): start a periodic RBAC re-check tied to this
-      // session. Without this, a USER whose access is revoked mid-session
-      // continues to receive the terminal stream as long as they don't
-      // type — `handleInput` is the only path that re-checks RBAC.
+      // SECURITY (F-02 + audit-2026-06): periodic re-check of BOTH
+      //   - the user's session validity (`tokenVersion`) so an admin
+      //     running `POST /users/:id/revoke-tokens` actually closes
+      //     active terminals, not just future HTTP requests;
+      //   - their RBAC access on the target machine.
+      // Either failing condition tears down the WS, the SSH stream and
+      // the session map entry, and emits an audit event so the kill is
+      // visible in the admin log.
       const accessPoll = setInterval(async () => {
         const session = this.sshSessions.get(client.id);
         if (!session) return;
         try {
-          const stillAllowed = await this.rbacService.hasAccess(
-            user.sub,
-            session.machineId,
-            AccessLevel.OPERATOR,
-          );
+          // (a) tokenVersion check — addresses audit finding #1 of the
+          // external review. Pinned at connect-time in `client.data.user`.
+          const dbUser = await this.usersService.findOneById(user.sub);
+          const tokenRevoked =
+            !dbUser || dbUser.tokenVersion !== client.data.user.tokenVersion;
+
+          // (b) RBAC re-check (only if the user is still valid — no
+          // point asking the RBAC table about a deleted account).
+          const stillAllowed = tokenRevoked
+            ? false
+            : await this.rbacService.hasAccess(
+                user.sub,
+                session.machineId,
+                AccessLevel.OPERATOR,
+              );
           session.accessCache = { allowed: stillAllowed, lastChecked: Date.now() };
-          if (!stillAllowed) {
+
+          if (tokenRevoked || !stillAllowed) {
+            const reason = tokenRevoked ? 'token_revoke' : 'rbac_revoke';
             this.logger.warn(
-              `RBAC revocation detected for user=${user.sub} machine=${session.machineId} — closing session`,
+              `Session terminated (${reason}) for user=${user.sub} machine=${session.machineId}`,
             );
-            client.emit('error', 'Access revoked');
+            client.emit('error', tokenRevoked ? 'Session revoked' : 'Access revoked');
             session.stream.end();
             session.client.end();
             this.sshSessions.delete(client.id);
@@ -343,24 +366,26 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
             void this.auditService
               .log({
                 actorId: session.userId,
-                action: 'TERMINAL: SESSION_KILLED_RBAC_REVOKE',
+                action: tokenRevoked
+                  ? 'TERMINAL: SESSION_KILLED_TOKEN_REVOKE'
+                  : 'TERMINAL: SESSION_KILLED_RBAC_REVOKE',
                 category: AuditCategory.TERMINAL,
                 authMethod: user.authMethod,
                 ipAddress: this.getClientIp(client),
-                details: { sessionId: session.sessionId, reason: 'rbac_revoke' },
+                details: { sessionId: session.sessionId, reason },
                 entities: {
                   users: [session.userId],
                   machines: [session.machineId],
                   recordings: [session.sessionId],
                 },
               })
-              .catch((e) => this.logger.error('Failed to audit RBAC revoke', e));
+              .catch((e) => this.logger.error('Failed to audit session kill', e));
             client.disconnect();
           }
         } catch (e) {
           // On a transient DB error, do not kill the session — keep going.
           this.logger.warn(
-            `RBAC poll failed (transient): ${(e as Error).message}`,
+            `Access poll failed (transient): ${(e as Error).message}`,
           );
         }
       }, this.RBAC_POLL_INTERVAL_MS);

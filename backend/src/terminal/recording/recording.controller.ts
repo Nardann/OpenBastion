@@ -9,6 +9,7 @@ import {
   Req,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -18,6 +19,21 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService, AuditCategory } from '../../audit/audit.service';
 import type { Response } from 'express';
 import * as fs from 'node:fs';
+
+/**
+ * SECURITY (audit-2026-06 #2): Express parses repeated query keys
+ * (`?userId=a&userId=b`) into an array. Casting to `string` silently
+ * passes the array into Prisma's `where` clause which then throws at
+ * runtime with a 500. Reject anything that isn't undefined/string at
+ * the boundary so a misbehaving client gets a clean 400.
+ */
+function asOptionalString(value: unknown, paramName: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`Paramètre "${paramName}" invalide`);
+  }
+  return value;
+}
 
 @UseGuards(JwtAuthGuard)
 @Controller('recordings')
@@ -30,11 +46,16 @@ export class RecordingController {
   @Get()
   async list(
     @Req() req: any,
-    @Query('page') page = '1',
-    @Query('limit') limit = '20',
-    @Query('userId') filterUserId?: string,
-    @Query('machineId') filterMachineId?: string,
+    @Query('page') pageRaw: unknown = '1',
+    @Query('limit') limitRaw: unknown = '20',
+    @Query('userId') filterUserIdRaw?: unknown,
+    @Query('machineId') filterMachineIdRaw?: unknown,
   ) {
+    const page = asOptionalString(pageRaw, 'page') ?? '1';
+    const limit = asOptionalString(limitRaw, 'limit') ?? '20';
+    const filterUserId = asOptionalString(filterUserIdRaw, 'userId');
+    const filterMachineId = asOptionalString(filterMachineIdRaw, 'machineId');
+
     const isAdmin = req.user.role === Role.ADMIN && req.user.isAdminMode;
     const take = Math.min(Number(limit) || 20, 100);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
@@ -174,11 +195,16 @@ export class RecordingController {
   @Roles(Role.ADMIN)
   @Get('admin/all')
   async adminList(
-    @Query('page') page = '1',
-    @Query('limit') limit = '20',
-    @Query('userId') userId?: string,
-    @Query('machineId') machineId?: string,
+    @Query('page') pageRaw: unknown = '1',
+    @Query('limit') limitRaw: unknown = '20',
+    @Query('userId') userIdRaw?: unknown,
+    @Query('machineId') machineIdRaw?: unknown,
   ) {
+    const page = asOptionalString(pageRaw, 'page') ?? '1';
+    const limit = asOptionalString(limitRaw, 'limit') ?? '20';
+    const userId = asOptionalString(userIdRaw, 'userId');
+    const machineId = asOptionalString(machineIdRaw, 'machineId');
+
     const take = Math.min(Number(limit) || 20, 100);
     const skip = (Math.max(Number(page) || 1, 1) - 1) * take;
     const where: Record<string, unknown> = {};
