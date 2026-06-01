@@ -70,6 +70,20 @@ You will be asked to rotate the password immediately.
 
 ---
 
+## Update
+
+```bash
+cd OpenBastion
+
+# 1. Get latest version
+git pull
+
+# 2. Launch
+sudo docker compose up -d --build
+```
+
+---
+
 ## How sessions work
 
 1. An administrator adds a target machine (SSH or RDP/VNC) and stores its
