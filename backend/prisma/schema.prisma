@@ -52,6 +52,12 @@ model User {
   role                   Role      @default(USER)
   authMethod             AuthMethod @default(LOCAL)
   externalId             String?   // Sub for OIDC, DN for LDAP
+  // ID du AuthProvider pour les comptes LDAP/OIDC. NULL pour les comptes
+  // LOCAL ou les comptes externes legacy (avant le multi-provider). Permet
+  // que deux IdP différents (ex: Keycloak + Azure AD) puissent émettre le
+  // même `sub` sans collision.
+  authProviderId         String?
+  authProvider           AuthProvider? @relation(fields: [authProviderId], references: [id], onDelete: SetNull)
   tokenVersion           Int       @default(0)
   requiresPasswordChange Boolean   @default(false)
   otpSecret              String?   // Secret TOTP actif (otplib)
@@ -59,12 +65,13 @@ model User {
   isOtpEnabled           Boolean   @default(false)
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
-  
+
   groups                 Group[]    @relation("UserGroups")
   permissions            Permission[]
   auditLogs             AuditLog[]
 
-  @@unique([externalId, authMethod])
+  @@unique([externalId, authMethod, authProviderId])
+  @@index([authProviderId])
 }
 
 model Group {
@@ -169,6 +176,8 @@ model AuthProvider {
   config      Json             // Strategy specific config (URL, ClientID, etc.)
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
+
+  users       User[]
 }
 
 model AuditLog {

@@ -176,14 +176,18 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         (Date.now() - session.startTime.getTime()) / 1000,
       );
 
-      await this.auditService.logAction(
-        user?.sub || null,
-        'RDP: SESSION_CLOSED',
-        { machineId: session.machineId, duration: `${duration}s` },
-        user?.authMethod || null,
-        this.getClientIp(client),
-        AuditCategory.TERMINAL,
-      );
+      await this.auditService.log({
+        actorId: user?.sub ?? null,
+        action: 'RDP: SESSION_CLOSED',
+        category: AuditCategory.TERMINAL,
+        authMethod: user?.authMethod ?? null,
+        ipAddress: this.getClientIp(client),
+        details: { machineId: session.machineId, durationSeconds: duration },
+        entities: {
+          ...(user?.sub ? { users: [user.sub] } : {}),
+          machines: [session.machineId],
+        },
+      });
 
       try {
         session.socket.destroy();
@@ -305,19 +309,23 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         accessPoll,
       });
 
-      await this.auditService.logAction(
-        user.sub,
-        'RDP: SESSION_STARTED',
-        {
+      await this.auditService.log({
+        actorId: user.sub,
+        action: 'RDP: SESSION_STARTED',
+        category: AuditCategory.TERMINAL,
+        authMethod: user.authMethod,
+        ipAddress: this.getClientIp(client),
+        details: {
           machineId: data.machineId,
           machineName: machine.name,
           ip: machine.ip,
           security: machine.rdpSecurity,
         },
-        user.authMethod,
-        this.getClientIp(client),
-        AuditCategory.TERMINAL,
-      );
+        entities: {
+          users: [user.sub],
+          machines: [data.machineId],
+        },
+      });
 
       client.emit('security-settings', {
         allowCopyPaste: machine.allowCopyPaste,

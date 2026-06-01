@@ -15,7 +15,9 @@ import {
   LogOut,
   FolderPlus,
   ShieldOff,
+  Activity,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useLang } from '../context/LangContext';
 
@@ -40,6 +42,9 @@ interface Group {
 
 const AdminUsers: React.FC = () => {
   const { t } = useLang();
+  const navigate = useNavigate();
+  const viewActivity = (userId: string) =>
+    navigate(`/administration/logs?entityType=user&entityId=${userId}`);
   const [users, setUsers] = useState<User[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState<'users' | 'groups'>('users');
@@ -50,6 +55,11 @@ const AdminUsers: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [userFormData, setUserFormData] = useState({ email: '', username: '', password: '', role: 'USER' });
+  // Track the auth method of the user currently being edited so we can
+  // disable identity fields when it's LDAP / OIDC (backend rejects the
+  // mutation either way; the UI surfaces the limitation up-front).
+  const [editingAuthMethod, setEditingAuthMethod] = useState<string>('LOCAL');
+  const isEditingExternalUser = editingAuthMethod !== 'LOCAL';
   const [groupFormData, setGroupFormData] = useState({ name: '', description: '' });
   const [selectedUserToAdd, setSelectedUserToAdd] = useState('');
 
@@ -77,14 +87,21 @@ const AdminUsers: React.FC = () => {
     e.preventDefault();
     try {
       if (editingId) {
-        const { password, ...updateData } = userFormData;
-        const payload = password ? userFormData : updateData;
+        // Strip identity-owned fields when editing an LDAP/OIDC user.
+        // Backend rejects them anyway with a 403; the strip just keeps
+        // the request tidy and the audit log free of stale "tried to
+        // change email" noise.
+        const { email, username, password, ...common } = userFormData;
+        const payload = isEditingExternalUser
+          ? { role: common.role }
+          : (password ? userFormData : { email, username, role: common.role });
         await api.patch(`/users/${editingId}`, payload);
       } else {
         await api.post('/users', userFormData);
       }
       setIsUserModalOpen(false);
       setEditingId(null);
+      setEditingAuthMethod('LOCAL');
       setUserFormData({ email: '', username: '', password: '', role: 'USER' });
       fetchData();
     } catch (err: any) {
@@ -173,6 +190,7 @@ const AdminUsers: React.FC = () => {
 
   const openEditUser = (user: User) => {
     setEditingId(user.id);
+    setEditingAuthMethod(user.authMethod || 'LOCAL');
     setUserFormData({
       email: user.email,
       username: user.username || '',
@@ -292,6 +310,13 @@ const AdminUsers: React.FC = () => {
                             </button>
                           )}
                           <button
+                            onClick={() => viewActivity(user.id)}
+                            className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
+                            title={t('adminUsers.actions.viewActivity')}
+                          >
+                            <Activity size={18} />
+                          </button>
+                          <button
                             onClick={() => revokeUserTokens(user.id)}
                             className="p-2 text-text-secondary hover:text-warning hover:bg-warning/5 rounded-md transition-all"
                             title={t('adminUsers.actions.revokeSessions')}
@@ -377,6 +402,13 @@ const AdminUsers: React.FC = () => {
                     <Users size={14} /> {t('adminUsers.manageMembers')}
                   </button>
                   <button
+                    onClick={() => navigate(`/administration/logs?entityType=group&entityId=${group.id}`)}
+                    className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-all"
+                    title={t('adminUsers.actions.viewActivity')}
+                  >
+                    <Activity size={16} />
+                  </button>
+                  <button
                     onClick={() => deleteGroup(group.id)}
                     className="p-2 text-text-secondary hover:text-danger hover:bg-danger/5 rounded-md transition-all"
                     title={t('adminUsers.deleteGroupLabel')}
@@ -415,13 +447,24 @@ const AdminUsers: React.FC = () => {
             </div>
 
             <form onSubmit={handleCreateUser} className="space-y-6">
+              {editingId && isEditingExternalUser && (
+                <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg flex items-start gap-3 text-primary">
+                  <ShieldOff size={16} className="flex-shrink-0 mt-0.5" />
+                  <p className="text-[11px] leading-relaxed">
+                    <span className="font-bold uppercase tracking-wider">{editingAuthMethod}</span>
+                    {' — '}
+                    {t('adminUsers.modal.externalManagedHint')}
+                  </p>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="t-eyebrow ml-1">{t('adminUsers.modal.email')}</label>
                 <div className="relative group">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <Mail size={16} />
                   </div>
-                  <input required type="email" className="form-input input-with-icon h-11 text-sm" placeholder={t('adminUsers.modal.emailPlaceholder')} value={userFormData.email} onChange={e => setUserFormData({...userFormData, email: e.target.value})} />
+                  <input required type="email" disabled={editingId !== null && isEditingExternalUser} className="form-input input-with-icon h-11 text-sm disabled:opacity-60 disabled:cursor-not-allowed" placeholder={t('adminUsers.modal.emailPlaceholder')} value={userFormData.email} onChange={e => setUserFormData({...userFormData, email: e.target.value})} />
                 </div>
               </div>
 
@@ -431,19 +474,21 @@ const AdminUsers: React.FC = () => {
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
                     <UserIcon size={16} />
                   </div>
-                  <input type="text" className="form-input input-with-icon h-11 text-sm" placeholder={t('adminUsers.modal.usernamePlaceholder')} value={userFormData.username} onChange={e => setUserFormData({...userFormData, username: e.target.value})} />
+                  <input type="text" disabled={editingId !== null && isEditingExternalUser} className="form-input input-with-icon h-11 text-sm disabled:opacity-60 disabled:cursor-not-allowed" placeholder={t('adminUsers.modal.usernamePlaceholder')} value={userFormData.username} onChange={e => setUserFormData({...userFormData, username: e.target.value})} />
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="t-eyebrow ml-1">{editingId ? t('adminUsers.modal.passwordEdit') : t('adminUsers.modal.passwordNew')}</label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
-                    <Lock size={16} />
+              {!(editingId && isEditingExternalUser) && (
+                <div className="space-y-1.5">
+                  <label className="t-eyebrow ml-1">{editingId ? t('adminUsers.modal.passwordEdit') : t('adminUsers.modal.passwordNew')}</label>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-text-secondary group-focus-within:text-primary transition-colors">
+                      <Lock size={16} />
+                    </div>
+                    <input required={!editingId} type="password" password-field="true" className="form-input input-with-icon h-11 text-sm" placeholder="••••••••" value={userFormData.password} onChange={e => setUserFormData({...userFormData, password: e.target.value})} />
                   </div>
-                  <input required={!editingId} type="password" password-field="true" className="form-input input-with-icon h-11 text-sm" placeholder="••••••••" value={userFormData.password} onChange={e => setUserFormData({...userFormData, password: e.target.value})} />
                 </div>
-              </div>
+              )}
 
               <div className="space-y-1.5">
                 <label className="t-eyebrow ml-1">{t('adminUsers.modal.roleLabel')}</label>

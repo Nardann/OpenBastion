@@ -7,6 +7,7 @@ import {
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { LdapService } from './ldap.service';
+import { AuthProvidersService } from './auth-providers.service';
 import { VaultService } from '../vault/vault.service';
 import { OtpLockoutService } from './otp-lockout.service';
 import * as argon2 from 'argon2';
@@ -42,6 +43,7 @@ export class AuthService {
     private usersService: UsersService,
     private jwtService: JwtService,
     private ldapService: LdapService,
+    private providersService: AuthProvidersService,
     private vault: VaultService,
     private otpLockout: OtpLockoutService,
   ) {}
@@ -71,22 +73,30 @@ export class AuthService {
     return this.updateUserPassword(userId, newPass);
   }
 
+  /**
+   * Multi-provider validation.
+   *
+   * - `providerId === 'local'` → built-in local auth (Argon2id against
+   *   `User.passwordHash`).
+   * - `providerId === <uuid>`  → resolved against `AuthProvider`; an LDAP
+   *   row delegates to `LdapService.authenticate(id, …)`. OIDC providers
+   *   are not handled here (their flow lives in the controller — browser
+   *   redirect through `getAuthorizationUrl`).
+   *
+   * Anti-enumeration: when `local` is selected we always run
+   * `argon2.verify` (against a dummy hash on miss) so the response time
+   * doesn't reveal whether the identifier exists.
+   */
   async validateUser(
+    providerId: string,
     identifier: string,
     pass: string,
-    method: AuthMethod,
   ): Promise<any> {
-    this.logger.debug(`Validating user via ${method}`);
-
-    if (method === AuthMethod.LOCAL) {
-      // SECURITY: collapse the email/username lookups into one OR query so a
-      // missed lookup doesn't leak which channel matched, AND always perform
-      // a real argon2.verify (against a dummy hash if the user is missing or
-      // not LOCAL) so the response time is constant.
+    if (providerId === 'local') {
+      this.logger.debug('Validating user via LOCAL');
       const user = await this.usersService.findOneByEmailOrUsername(identifier);
-      const isLocalCandidate = !!user
-        && user.authMethod === AuthMethod.LOCAL
-        && !!user.passwordHash;
+      const isLocalCandidate =
+        !!user && user.authMethod === AuthMethod.LOCAL && !!user.passwordHash;
       const hashToCheck = isLocalCandidate
         ? user!.passwordHash!
         : await this.getDummyHash();
@@ -98,15 +108,28 @@ export class AuthService {
       return null;
     }
 
-    if (method === AuthMethod.LDAP) {
-      if (!identifier) return null;
+    if (!identifier) return null;
 
-      const ldapUser = await this.ldapService.authenticate(identifier, pass);
-      if (ldapUser) {
-        return ldapUser;
-      }
+    const provider = await this.providersService.findEnabledById(providerId);
+    if (!provider) {
+      this.logger.warn(`Login attempt against unknown/disabled provider ${providerId}`);
+      return null;
     }
 
+    if (provider.type === 'LDAP') {
+      this.logger.debug(`Validating user via LDAP provider ${provider.name}`);
+      const ldapUser = await this.ldapService.authenticate(
+        provider.id,
+        identifier,
+        pass,
+      );
+      return ldapUser ?? null;
+    }
+
+    // OIDC must never reach this code path — its flow is browser-driven.
+    this.logger.warn(
+      `Password login attempted against OIDC provider ${provider.name} — refused`,
+    );
     return null;
   }
 

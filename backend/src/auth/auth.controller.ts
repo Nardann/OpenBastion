@@ -11,6 +11,7 @@ import {
   Req,
   Param,
   Patch,
+  Delete,
   ParseUUIDPipe,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
@@ -20,6 +21,7 @@ import type { Response } from 'express';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtService } from '@nestjs/jwt';
 import { OidcService } from './oidc.service';
+import { LdapService } from './ldap.service';
 import { AuthProvidersService } from './auth-providers.service';
 import { TokenBlacklistService } from './token-blacklist.service';
 import { RefreshTokenService } from './refresh-token.service';
@@ -29,7 +31,8 @@ import { LoginDto } from './dto/login.dto';
 import { LoginOtpDto, SudoDto, VerifyOtpDto } from './dto/otp.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import {
-  UpsertAuthProviderDto,
+  CreateAuthProviderDto,
+  UpdateAuthProviderDto,
   validateProviderConfig,
 } from './dto/auth-provider.dto';
 import {
@@ -51,6 +54,7 @@ export class AuthController {
     private authService: AuthService,
     private jwtService: JwtService,
     private oidcService: OidcService,
+    private ldapService: LdapService,
     private authProvidersService: AuthProvidersService,
     private auditService: AuditService,
     private tokenBlacklistService: TokenBlacklistService,
@@ -105,54 +109,33 @@ export class AuthController {
     response.setHeader('Expires', '0');
   }
 
+  /**
+   * Anonymous list shown on the login page. Always includes the synthetic
+   * `local` provider first so the UI can render "Local" alongside the
+   * configured LDAP/OIDC directories. Never returns secrets.
+   */
   @Get('providers')
   @SkipThrottle()
   async getProviders() {
-    // SECURITY: this endpoint is anonymous (login screen needs to know which
-    // providers are enabled). NEVER return decrypted credentials here. Only
-    // a minimal projection — login UI only needs id/name/type/enabled and a
-    // public OIDC redirect target when applicable.
-    const providers = await this.authProvidersService.findAllEnabled();
-    return providers.map((p: any) => {
-      const out: Record<string, unknown> = {
-        id: p.id,
-        name: p.name,
-        type: p.type,
-        enabled: p.enabled,
-      };
-      // For OIDC, the login UI may need to render a "Sign in with …" button
-      // pointing to /auth/oidc/login — issuer hostname is the only safe hint.
-      if (p.type === 'OIDC' && p.config?.issuer) {
-        try {
-          out['issuerHost'] = new URL(p.config.issuer).hostname;
-        } catch {
-          /* ignore malformed issuer */
-        }
-      }
-      return out;
-    });
+    const providers = await this.authProvidersService.findAllPublic();
+    return [
+      { id: 'local', name: 'Local', type: 'LOCAL', enabled: true },
+      ...providers,
+    ];
   }
 
+  /** Admin-only: full list with decrypted config for the management table. */
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @Get('admin/providers')
   async getAllProviders() {
-    const providers = await this.prisma.authProvider.findMany();
-    return Promise.all(
-      providers.map(async (p) => ({
-        ...p,
-        config: this.authProvidersService.decryptConfig(p.config, p.id),
-      })),
-    );
+    return this.authProvidersService.findAllForAdmin();
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  @Patch('providers/:id')
-  async updateProvider(
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Body() body: UpsertAuthProviderDto,
-  ) {
+  @Post('admin/providers')
+  async createProvider(@Body() body: CreateAuthProviderDto, @Req() req: any) {
     const validatedConfig = await validateProviderConfig(
       body.type,
       body.config ?? {},
@@ -163,23 +146,87 @@ export class AuthController {
       });
     });
 
-    const updatePayload: { config: typeof validatedConfig; enabled?: boolean } = {
+    const createPayload: {
+      name: string;
+      type: typeof body.type;
+      config: typeof validatedConfig;
+      enabled?: boolean;
+    } = {
+      name: body.name,
+      type: body.type,
       config: validatedConfig,
     };
-    if (body.enabled !== undefined) updatePayload.enabled = body.enabled;
-    const result = await this.authProvidersService.update(id, updatePayload);
+    if (body.enabled !== undefined) createPayload.enabled = body.enabled;
+    const created = await this.authProvidersService.create(createPayload);
 
-    // SECURITY (F-03 fix): drop the OIDC discovery cache so the next
-    // login flow re-discovers against the new issuer instead of reusing
-    // potentially-malicious metadata from the previous one.
+    // F-03: drop cached discovery so the next flow re-discovers freshly.
+    if (created.type === 'OIDC') this.oidcService.invalidateCache();
+
+    await this.auditService.logAction(
+      req.user?.sub ?? null,
+      'AUTH: PROVIDER_CREATED',
+      { providerId: created.id, name: created.name, type: created.type },
+      req.user?.authMethod ?? null,
+      req.ip,
+      AuditCategory.AUTH,
+    );
+
+    return {
+      ...created,
+      config: this.authProvidersService.decryptConfig(created.config, created.id),
+    };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch('admin/providers/:id')
+  async updateProvider(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() body: UpdateAuthProviderDto,
+    @Req() req: any,
+  ) {
+    const existing = await this.authProvidersService.findById(id);
+    if (!existing) throw new BadRequestException('Provider introuvable');
+
+    const updatePayload: {
+      name?: string;
+      config?: ReturnType<typeof validateProviderConfig> extends Promise<infer C> ? C : never;
+      enabled?: boolean;
+    } = {};
+    if (body.name !== undefined) updatePayload.name = body.name;
+    if (body.enabled !== undefined) updatePayload.enabled = body.enabled;
+
+    if (body.config !== undefined) {
+      const validatedConfig = await validateProviderConfig(
+        existing.type,
+        body.config ?? {},
+      ).catch((err) => {
+        throw new BadRequestException({
+          message: err.message,
+          errors: (err as any).details ?? [],
+        });
+      });
+      updatePayload.config = validatedConfig as any;
+    }
+
+    const result = await this.authProvidersService.update(id, updatePayload as any);
+
+    // F-03: clear OIDC cache on any update; cheap and safer than tracking
+    // exactly which fields changed.
     if (result.type === 'OIDC') this.oidcService.invalidateCache();
 
     await this.auditService.logAction(
-      null as any,
+      req.user?.sub ?? null,
       'AUTH: PROVIDER_UPDATED',
-      { providerId: id, type: result.type, enabled: result.enabled },
-      'ADMIN' as any,
-      '',
+      {
+        providerId: id,
+        name: result.name,
+        type: result.type,
+        enabled: result.enabled,
+        changed: Object.keys(updatePayload),
+      },
+      req.user?.authMethod ?? null,
+      req.ip,
       AuditCategory.AUTH,
     );
 
@@ -191,52 +238,25 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
-  @Post('providers/upsert')
-  async upsertProvider(@Body() body: UpsertAuthProviderDto) {
-    // Validate the inner config against the per-type schema. Without this,
-    // arbitrary objects could be persisted (CVE: stored config injection).
-    const validatedConfig = await validateProviderConfig(
-      body.type,
-      body.config ?? {},
-    ).catch((err) => {
-      throw new BadRequestException({
-        message: err.message,
-        errors: (err as any).details ?? [],
-      });
-    });
+  @Delete('admin/providers/:id')
+  async deleteProvider(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Req() req: any,
+  ) {
+    const removed = await this.authProvidersService.delete(id);
 
-    const existing = await this.prisma.authProvider.findFirst({
-      where: { type: body.type },
-    });
+    if (removed.type === 'OIDC') this.oidcService.invalidateCache();
 
-    let result;
-    if (existing) {
-      const upsertPayload: { config: typeof validatedConfig; enabled?: boolean } = {
-        config: validatedConfig,
-      };
-      if (body.enabled !== undefined) upsertPayload.enabled = body.enabled;
-      result = await this.authProvidersService.update(existing.id, upsertPayload);
-    } else {
-      result = await this.authProvidersService.create({
-        name: body.type === 'LDAP' ? 'LDAP Provider' : 'OIDC Provider',
-        type: body.type,
-        config: validatedConfig,
-      });
-      if (body.enabled !== undefined) {
-        await this.authProvidersService.update(result.id, {
-          enabled: body.enabled,
-        });
-      }
-    }
+    await this.auditService.logAction(
+      req.user?.sub ?? null,
+      'AUTH: PROVIDER_DELETED',
+      { providerId: removed.id, name: removed.name, type: removed.type },
+      req.user?.authMethod ?? null,
+      req.ip,
+      AuditCategory.AUTH,
+    );
 
-    // SECURITY (F-03 fix): same as updateProvider — clear cached
-    // discovery metadata so the next callback re-discovers.
-    if (body.type === 'OIDC') this.oidcService.invalidateCache();
-
-    return {
-      ...result,
-      config: this.authProvidersService.decryptConfig(result.config, result.id),
-    };
+    return { message: 'Provider supprimé', id: removed.id };
   }
 
   @Post('login')
@@ -247,9 +267,9 @@ export class AuthController {
     @Req() request: any,
   ) {
     const user = await this.authService.validateUser(
+      loginDto.providerId,
       loginDto.identifier,
       loginDto.password,
-      loginDto.authMethod,
     );
     if (!user) {
       throw new UnauthorizedException('Identifiants invalides');
@@ -269,7 +289,11 @@ export class AuthController {
     await this.auditService.logAction(
       user.id,
       'AUTH: LOGIN_SUCCESS',
-      { userId: user.id },
+      {
+        userId: user.id,
+        providerId: loginDto.providerId,
+        authProviderId: user.authProviderId ?? null,
+      },
       user.authMethod,
       request.ip,
       AuditCategory.AUTH,
@@ -373,14 +397,26 @@ export class AuthController {
     const user = await this.prisma.user.findUnique({ where: { id: req.user.sub } });
     if (!user || user.role !== 'ADMIN') throw new UnauthorizedException('Accès refusé');
 
-    // SECURITY: sudo requires fresh proof of identity. Order:
-    //   1. If OTP enabled → require valid OTP.
-    //   2. Else if LOCAL account → require current password (step-up).
-    //   3. Else (LDAP/OIDC without OTP) → refuse: enable OTP first.
+    // SECURITY: sudo requires fresh proof of identity. The accepted proof
+    // depends on the account's auth method and OTP state:
+    //   1. OTP enabled (any auth method) → valid OTP code.
+    //   2. LOCAL  + no OTP → current password (step-up).
+    //   3. LDAP   + no OTP → re-bind against the directory with current
+    //                        identifier + password. We verify the bound
+    //                        user matches the calling JWT, so typing
+    //                        someone else's LDAP credentials cannot
+    //                        elevate the caller.
+    //   4. OIDC   + no OTP → NOT handled here. The browser must hit
+    //                        `GET /auth/sudo/oidc/:providerId/start`,
+    //                        which forces an OIDC roundtrip with
+    //                        `prompt=login` so the user re-proves
+    //                        identity at the IdP.
+    let sudoProof: 'OTP' | 'PASSWORD' | 'LDAP_REBIND';
     if (user.isOtpEnabled) {
       if (!body.code) throw new BadRequestException('Code OTP requis');
       const isValid = await this.authService.verifyOtp(user.id, body.code);
       if (!isValid) throw new BadRequestException('Code OTP invalide');
+      sudoProof = 'OTP';
     } else if (user.authMethod === 'LOCAL') {
       if (!body.password)
         throw new BadRequestException(
@@ -390,9 +426,68 @@ export class AuthController {
         throw new UnauthorizedException('Compte sans mot de passe local');
       const ok = await argon2.verify(user.passwordHash, body.password);
       if (!ok) throw new BadRequestException('Mot de passe incorrect');
+      sudoProof = 'PASSWORD';
+    } else if (user.authMethod === 'LDAP') {
+      if (!body.password) {
+        throw new BadRequestException('Mot de passe LDAP requis');
+      }
+      if (!user.authProviderId) {
+        throw new ForbiddenException(
+          'Compte LDAP sans provider rattaché — activez l\'OTP',
+        );
+      }
+      // SECURITY: the identifier comes from the JWT-bound user record,
+      // NOT from the request body. Reading it from the body would let
+      // an authenticated user re-bind as a *different* LDAP account
+      // (their colleague's, say) and grant sudo to their own local
+      // bastion id — the post-bind id-match check below would have
+      // caught it, but defense in depth: make the misuse impossible to
+      // express. Prefer the stored handle (sAMAccountName / uid)
+      // because that's what the LDAP search filter expects; fall back
+      // to email for legacy users whose handle is null.
+      const identifier = user.username ?? user.email;
+      if (!identifier) {
+        throw new ForbiddenException(
+          'Compte LDAP sans identifiant utilisable — activez l\'OTP',
+        );
+      }
+      const bound = await this.ldapService.authenticate(
+        user.authProviderId,
+        identifier,
+        body.password,
+      );
+      if (!bound) {
+        throw new BadRequestException('Mot de passe LDAP invalide');
+      }
+      // Defence in depth: even with our own identifier, a misconfigured
+      // search filter could resolve to a different DN. Refuse + audit
+      // if the bound user is not who we asked for.
+      if ((bound as { id?: string }).id !== user.id) {
+        await this.auditService.log({
+          actorId: user.id,
+          action: 'AUTH: SUDO_LDAP_IDENTITY_MISMATCH',
+          category: AuditCategory.AUTH,
+          authMethod: 'LDAP' as any,
+          ipAddress: req.ip,
+          details: {
+            calledBy: user.id,
+            boundId: (bound as any).id,
+            identifierUsed: identifier,
+          },
+          entities: {
+            users: [user.id],
+            ...(user.authProviderId ? { providers: [user.authProviderId] } : {}),
+          },
+        });
+        throw new ForbiddenException(
+          'Ré-authentification LDAP impossible pour ce compte',
+        );
+      }
+      sudoProof = 'LDAP_REBIND';
     } else {
+      // OIDC + no OTP: explicitly point the client at the browser flow.
       throw new ForbiddenException(
-        'Activez l\'OTP avant d\'utiliser le mode admin pour ce type de compte',
+        'Compte OIDC : utilisez la ré-authentification SSO (GET /auth/sudo/oidc/{providerId}/start) ou activez l\'OTP.',
       );
     }
 
@@ -402,7 +497,7 @@ export class AuthController {
     await this.auditService.logAction(
       user.id,
       'AUTH: SUDO_MODE_ACTIVATED',
-      { userId: user.id },
+      { userId: user.id, proof: sudoProof },
       user.authMethod,
       req.ip,
       AuditCategory.AUTH,
@@ -453,31 +548,90 @@ export class AuthController {
     return { message: 'OTP désactivé avec succès' };
   }
 
-  @Get('oidc/login')
-  @Throttle({ auth: { limit: THROTTLE_AUTH_LIMIT, ttl: THROTTLE_AUTH_TTL } })
-  async oidcLogin(@Req() req: any, @Res() res: Response) {
-    const state = crypto.randomBytes(16).toString('hex');
-    const nonce = crypto.randomBytes(16).toString('hex');
-    const codeVerifier = crypto.randomBytes(48).toString('base64url');
-
-    const url = await this.oidcService.getAuthorizationUrl(state, nonce, codeVerifier);
-    if (!url) throw new UnauthorizedException('OIDC not configured');
-
+  private setOidcHandshakeCookies(
+    res: Response,
+    req: any,
+    state: string,
+    nonce: string,
+    codeVerifier: string,
+    providerId: string,
+  ) {
     const isSecure =
       !!req?.secure ||
       req?.protocol === 'https' ||
       req?.headers?.['x-forwarded-proto'] === 'https';
-    const oidcCookieOptions = {
+    // Explicit `path: '/'` — Express defaults to '/' but being explicit
+    // avoids any surprise when reverse proxies or middleware mutate paths.
+    const opts = {
       httpOnly: true,
       sameSite: 'lax' as const,
       maxAge: 300000,
       secure: isSecure || this.isProduction,
+      path: '/',
     };
+    res.cookie('oidc_state', state, opts);
+    res.cookie('oidc_nonce', nonce, opts);
+    res.cookie('oidc_code_verifier', codeVerifier, opts);
+    // SECURITY: bind the in-flight OIDC handshake to a specific provider so
+    // the callback can't be replayed against a different IdP. The cookie
+    // is HttpOnly + SameSite=Lax + single-use (cleared in the callback).
+    res.cookie('oidc_provider_id', providerId, opts);
 
-    res.cookie('oidc_state', state, oidcCookieOptions);
-    res.cookie('oidc_nonce', nonce, oidcCookieOptions);
-    res.cookie('oidc_code_verifier', codeVerifier, oidcCookieOptions);
+    // DIAG: surface what we are about to ship so admins can compare with
+    // the cookie header that arrives on the callback. We log presence and
+    // length only — never the values themselves.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[OIDC START] providerId=${providerId} setCookies={state:${state.length}b, nonce:${nonce.length}b, codeVerifier:${codeVerifier.length}b} secure=${opts.secure} sameSite=${opts.sameSite}`,
+    );
+  }
+
+  private clearOidcHandshakeCookies(response: Response) {
+    response.clearCookie('oidc_state', { path: '/' });
+    response.clearCookie('oidc_nonce', { path: '/' });
+    response.clearCookie('oidc_code_verifier', { path: '/' });
+    response.clearCookie('oidc_provider_id', { path: '/' });
+  }
+
+  /**
+   * Provider-aware OIDC start: redirects the browser to the chosen IdP's
+   * authorization endpoint and stores the handshake state in a short-lived
+   * cookie scoped to the provider id.
+   */
+  @Get('oidc/:providerId/login')
+  @Throttle({ auth: { limit: THROTTLE_AUTH_LIMIT, ttl: THROTTLE_AUTH_TTL } })
+  async oidcLoginForProvider(
+    @Param('providerId', new ParseUUIDPipe()) providerId: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const state = crypto.randomBytes(16).toString('hex');
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const codeVerifier = crypto.randomBytes(48).toString('base64url');
+
+    const url = await this.oidcService.getAuthorizationUrl(
+      providerId,
+      state,
+      nonce,
+      codeVerifier,
+    );
+    if (!url) throw new UnauthorizedException('OIDC not configured');
+
+    this.setOidcHandshakeCookies(res, req, state, nonce, codeVerifier, providerId);
     res.redirect(url);
+  }
+
+  /**
+   * Legacy shortcut for the single-OIDC case. Resolves the first enabled
+   * OIDC provider and delegates to the id-scoped handler. Returns 404 when
+   * no OIDC provider is enabled (UI should hide the SSO button instead).
+   */
+  @Get('oidc/login')
+  @Throttle({ auth: { limit: THROTTLE_AUTH_LIMIT, ttl: THROTTLE_AUTH_TTL } })
+  async oidcLoginLegacy(@Req() req: any, @Res() res: Response) {
+    const provider = await this.authProvidersService.findFirstEnabledByType('OIDC');
+    if (!provider) throw new UnauthorizedException('OIDC not configured');
+    return this.oidcLoginForProvider(provider.id, req, res);
   }
 
   @Get('oidc/callback')
@@ -486,13 +640,75 @@ export class AuthController {
     @Req() request: any,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const state = request.query.state as string;
+    // CodeQL "Type confusion through parameter tampering": Express
+    // parses repeated query keys into an array. `?state=foo&state=bar`
+    // would arrive as `['foo', 'bar']`. The downstream `===` would
+    // accidentally fail-safe (array !== cookie string), but the
+    // diagnostic log does `state.length` which on an array lies about
+    // the byte length. Assert string-or-reject at the boundary.
+    const stateRaw: unknown = request.query?.state;
+    if (typeof stateRaw !== 'string') {
+      throw new UnauthorizedException('Invalid OIDC state parameter');
+    }
+    const state = stateRaw;
+
+    // ─── Dispatch: sudo flow vs login flow ──────────────────────────
+    // Both flows hit `/api/auth/oidc/callback` because the OIDC client
+    // registered at the IdP only knows one redirect_uri. We pick the
+    // branch by matching the URL state against the saved state cookies:
+    // whichever cookie matches the URL state is the flow this callback
+    // belongs to. This correctly handles the edge case where a user has
+    // a stale sudo handshake AND opens a fresh login flow in another
+    // tab — the URL state pinpoints exactly which one came back.
+    const sudoStateCookie = request.cookies?.sudo_oidc_state;
+    const loginStateCookie = request.cookies?.oidc_state;
+    if (sudoStateCookie && sudoStateCookie === state) {
+      return this.handleSudoOidcCallback(request, response, state);
+    }
+    // Defensive: if only sudo cookies exist (no login state at all),
+    // route to sudo so the state-mismatch error message is correct.
+    if (sudoStateCookie && !loginStateCookie) {
+      return this.handleSudoOidcCallback(request, response, state);
+    }
+
     const savedState = request.cookies?.oidc_state;
     const savedNonce = request.cookies?.oidc_nonce;
     const savedCodeVerifier = request.cookies?.oidc_code_verifier;
+    const savedProviderId = request.cookies?.oidc_provider_id;
 
-    if (!savedState || savedState !== state) throw new UnauthorizedException('Invalid OIDC state');
+    // DIAG: when the callback fails with "Invalid OIDC state" the first
+    // thing to know is whether cookies arrived at all and which ones the
+    // proxy chain stripped. We log the cookie *names* the request carried
+    // and the lengths of values — never the values themselves (they are
+    // CSRF tokens and PKCE verifiers, log poisoning would defeat them).
+    const cookieHeader: string | undefined = request.headers?.cookie;
+    const presentNames = cookieHeader
+      ? cookieHeader
+          .split(';')
+          .map((p: string) => p.trim().split('=')[0])
+          .filter(Boolean)
+      : [];
+    // eslint-disable-next-line no-console
+    console.log(
+      `[OIDC CALLBACK] cookieHeaderPresent=${!!cookieHeader} ` +
+        `parsedCount=${Object.keys(request.cookies ?? {}).length} ` +
+        `names=[${presentNames.join(',')}] ` +
+        `state.inUrl=${state ? state.length + 'b' : 'absent'} ` +
+        `state.inCookie=${savedState ? savedState.length + 'b' : 'absent'} ` +
+        `nonce=${savedNonce ? 'yes' : 'no'} ` +
+        `codeVerifier=${savedCodeVerifier ? 'yes' : 'no'} ` +
+        `providerId=${savedProviderId ? 'yes' : 'no'}`,
+    );
+
+    if (!savedState || savedState !== state) {
+      throw new UnauthorizedException(
+        `Invalid OIDC state (cookiePresent=${!!savedState}, matches=${savedState === state})`,
+      );
+    }
     if (!savedCodeVerifier) throw new UnauthorizedException('Missing PKCE code verifier');
+    if (!savedProviderId || !/^[0-9a-fA-F-]{36}$/.test(savedProviderId)) {
+      throw new UnauthorizedException('Missing OIDC provider context');
+    }
 
     const protocol =
       request.get('X-Forwarded-Proto') || (this.isProduction ? 'https' : 'http');
@@ -500,6 +716,7 @@ export class AuthController {
     const fullUrl = `${protocol}://${host}/api${request.originalUrl}`;
 
     const user = await this.oidcService.validateCallback(
+      savedProviderId,
       fullUrl,
       savedState,
       savedNonce,
@@ -513,7 +730,7 @@ export class AuthController {
     await this.auditService.logAction(
       user.id,
       'AUTH: OIDC_LOGIN_SUCCESS',
-      { userId: user.id },
+      { userId: user.id, providerId: savedProviderId },
       'OIDC' as any,
       request.ip,
       AuditCategory.AUTH,
@@ -521,11 +738,221 @@ export class AuthController {
 
     this.setNoCacheHeaders(response);
     this.setAuthCookies(response, access_token, refreshToken, request);
-    // SECURITY: clear OIDC handshake cookies — single-use only.
-    response.clearCookie('oidc_state');
-    response.clearCookie('oidc_nonce');
-    response.clearCookie('oidc_code_verifier');
+    this.clearOidcHandshakeCookies(response);
     response.redirect('/');
+  }
+
+  // ─── OIDC sudo (admin mode step-up) ──────────────────────────────────
+  //
+  // For admins whose account is OIDC-managed and who don't have OTP set
+  // up, the regular `/auth/sudo` POST has nothing to verify against (no
+  // local password). Instead we trigger a full OIDC roundtrip with
+  // `prompt=login` so the IdP asks for credentials again, then verify
+  // that the returned `sub` still matches the calling user's
+  // `externalId` and grant the elevated JWT.
+  //
+  // Cookies are deliberately namespaced `sudo_oidc_*` so they cannot
+  // collide with an unrelated `oidc_*` flow that might be open in
+  // another tab.
+
+  private setSudoOidcHandshakeCookies(
+    res: Response,
+    req: any,
+    state: string,
+    nonce: string,
+    codeVerifier: string,
+    providerId: string,
+    userId: string,
+  ) {
+    const isSecure =
+      !!req?.secure ||
+      req?.protocol === 'https' ||
+      req?.headers?.['x-forwarded-proto'] === 'https';
+    const opts = {
+      httpOnly: true,
+      sameSite: 'lax' as const,
+      maxAge: 300_000,
+      secure: isSecure || this.isProduction,
+      path: '/',
+    };
+    res.cookie('sudo_oidc_state', state, opts);
+    res.cookie('sudo_oidc_nonce', nonce, opts);
+    res.cookie('sudo_oidc_code_verifier', codeVerifier, opts);
+    res.cookie('sudo_oidc_provider_id', providerId, opts);
+    // Binds the in-flight handshake to the calling user — if the
+    // callback completes for a different OIDC `sub`, we refuse to
+    // elevate. This is the property that makes sudo actually mean
+    // "fresh proof from the same person".
+    res.cookie('sudo_oidc_user_id', userId, opts);
+  }
+
+  private clearSudoOidcHandshakeCookies(response: Response) {
+    response.clearCookie('sudo_oidc_state', { path: '/' });
+    response.clearCookie('sudo_oidc_nonce', { path: '/' });
+    response.clearCookie('sudo_oidc_code_verifier', { path: '/' });
+    response.clearCookie('sudo_oidc_provider_id', { path: '/' });
+    response.clearCookie('sudo_oidc_user_id', { path: '/' });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('sudo/oidc/:providerId/start')
+  @Throttle({ auth: { limit: THROTTLE_AUTH_LIMIT, ttl: THROTTLE_AUTH_TTL } })
+  async sudoOidcStart(
+    @Param('providerId', new ParseUUIDPipe()) providerId: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    if (req.user.role !== 'ADMIN') {
+      throw new ForbiddenException('Accès refusé');
+    }
+    // The chosen provider must be THIS user's own provider — we refuse
+    // to elevate via Provider B if the user was provisioned by
+    // Provider A. Otherwise an admin tab from a federation could grant
+    // sudo while the IdP that owns the account is unreachable.
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: req.user.sub },
+    });
+    if (!dbUser || dbUser.authMethod !== 'OIDC' || !dbUser.externalId) {
+      throw new ForbiddenException('Le mode admin OIDC requiert un compte OIDC');
+    }
+    if (dbUser.authProviderId !== providerId) {
+      throw new ForbiddenException(
+        'Le provider choisi ne correspond pas à celui de votre compte',
+      );
+    }
+
+    const state = crypto.randomBytes(16).toString('hex');
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const codeVerifier = crypto.randomBytes(48).toString('base64url');
+
+    // `prompt=login` forces the IdP to actually ask for credentials —
+    // without it, an existing IdP session would silently re-issue a
+    // code and the "fresh proof" property of sudo would be a lie.
+    const url = await this.oidcService.getAuthorizationUrl(
+      providerId,
+      state,
+      nonce,
+      codeVerifier,
+      { prompt: 'login' },
+    );
+    if (!url) throw new UnauthorizedException('OIDC not configured');
+
+    this.setSudoOidcHandshakeCookies(
+      res,
+      req,
+      state,
+      nonce,
+      codeVerifier,
+      providerId,
+      req.user.sub,
+    );
+    res.redirect(url);
+  }
+
+  /**
+   * Internal handler for the sudo branch — called from `oidcCallback`
+   * when `sudo_oidc_*` cookies are detected on the incoming request.
+   * Not exposed as its own route because the OIDC client at the IdP is
+   * only registered with the single `/api/auth/oidc/callback`
+   * redirect_uri.
+   */
+  private async handleSudoOidcCallback(
+    request: any,
+    response: Response,
+    state: string,
+  ) {
+    const savedState = request.cookies?.sudo_oidc_state;
+    const savedNonce = request.cookies?.sudo_oidc_nonce;
+    const savedCodeVerifier = request.cookies?.sudo_oidc_code_verifier;
+    const savedProviderId = request.cookies?.sudo_oidc_provider_id;
+    const savedUserId = request.cookies?.sudo_oidc_user_id;
+
+    if (!savedState || savedState !== state) {
+      this.clearSudoOidcHandshakeCookies(response);
+      throw new UnauthorizedException('Invalid sudo OIDC state');
+    }
+    if (!savedCodeVerifier)
+      throw new UnauthorizedException('Missing PKCE verifier');
+    if (!savedProviderId || !/^[0-9a-fA-F-]{36}$/.test(savedProviderId))
+      throw new UnauthorizedException('Missing OIDC provider context');
+    if (!savedUserId || !/^[0-9a-fA-F-]{36}$/.test(savedUserId))
+      throw new UnauthorizedException('Missing user binding');
+
+    const protocol =
+      request.get('X-Forwarded-Proto') || (this.isProduction ? 'https' : 'http');
+    const host = request.get('X-Forwarded-Host') || request.get('host');
+    const fullUrl = `${protocol}://${host}/api${request.originalUrl}`;
+
+    const claims = await this.oidcService.verifyCallbackClaims(
+      savedProviderId,
+      fullUrl,
+      savedState,
+      savedNonce,
+      savedCodeVerifier,
+    );
+    if (!claims) {
+      this.clearSudoOidcHandshakeCookies(response);
+      throw new UnauthorizedException('OIDC sudo verification failed');
+    }
+
+    const dbUser = await this.prisma.user.findUnique({
+      where: { id: savedUserId },
+    });
+    if (!dbUser) {
+      this.clearSudoOidcHandshakeCookies(response);
+      throw new UnauthorizedException('Compte introuvable');
+    }
+    if (dbUser.role !== 'ADMIN') {
+      this.clearSudoOidcHandshakeCookies(response);
+      throw new ForbiddenException('Mode admin réservé aux administrateurs');
+    }
+    if (dbUser.externalId !== claims.sub) {
+      // The IdP successfully authenticated *somebody*, just not the
+      // person who initiated sudo. Audit it loudly so the admin sees
+      // cross-account probes (someone leaving a session open, social
+      // engineering, etc.) and refuse the elevation.
+      await this.auditService.log({
+        actorId: dbUser.id,
+        action: 'AUTH: SUDO_OIDC_SUB_MISMATCH',
+        category: AuditCategory.AUTH,
+        authMethod: 'OIDC' as any,
+        ipAddress: request.ip,
+        details: { expected: dbUser.externalId, returned: claims.sub },
+        entities: {
+          users: [dbUser.id],
+          ...(dbUser.authProviderId ? { providers: [dbUser.authProviderId] } : {}),
+        },
+      });
+      this.clearSudoOidcHandshakeCookies(response);
+      throw new ForbiddenException(
+        'L\'identité OIDC retournée ne correspond pas à votre compte',
+      );
+    }
+
+    const { access_token } = await this.authService.login(dbUser, true);
+    const refreshToken = await this.refreshTokenService.create(dbUser.id);
+
+    await this.auditService.log({
+      actorId: dbUser.id,
+      action: 'AUTH: SUDO_MODE_ACTIVATED',
+      category: AuditCategory.AUTH,
+      authMethod: 'OIDC' as any,
+      ipAddress: request.ip,
+      details: { userId: dbUser.id, proof: 'OIDC_REAUTH' },
+      entities: {
+        users: [dbUser.id],
+        ...(dbUser.authProviderId ? { providers: [dbUser.authProviderId] } : {}),
+      },
+    });
+
+    this.setNoCacheHeaders(response);
+    this.setAuthCookies(response, access_token, refreshToken, request);
+    this.clearSudoOidcHandshakeCookies(response);
+    // Drop the caller back where they came from — for now, the admin
+    // landing page. A future enhancement could carry an explicit
+    // `return_to` cookie (validated against an allowlist) so users get
+    // back to the exact admin sub-page they were trying to open.
+    response.redirect('/administration');
   }
 
   @UseGuards(JwtAuthGuard)

@@ -32,6 +32,13 @@ describe('UsersService.revokeAllTokens', () => {
       providers: [
         UsersService,
         { provide: PrismaService, useValue: mockPrisma },
+        // UsersService now emits audit rows on a few JIT/sync paths; the
+        // revoke-tokens flow doesn't touch those, but the constructor
+        // still needs the dependency wired.
+        {
+          provide: (await import('../audit/audit.service')).AuditService,
+          useValue: { log: jest.fn(), logAction: jest.fn() },
+        },
       ],
     }).compile();
     service = module.get<UsersService>(UsersService);

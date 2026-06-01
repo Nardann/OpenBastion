@@ -301,9 +301,9 @@ export class UpdateMeDto {
   @MinLength(3)
   username?: string;
 
-  @IsOptional()
-  @IsString()
-  @MinLength(12)
-  @Matches(PASSWORD_REGEX, { message: 'Le mot de passe doit être complexe' })
-  password?: string;
+  // SECURITY: a `password` field used to live here. Removed because it
+  // bypassed the current-password check that `/auth/change-password`
+  // enforces — any caller with a valid JWT could rotate the password
+  // without proving knowledge of the old one. Password changes now go
+  // through `POST /auth/change-password` exclusively.
 }

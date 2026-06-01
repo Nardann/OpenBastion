@@ -18,7 +18,7 @@ import AdminUsers from './pages/AdminUsers';
 import AdminProviders from './pages/AdminProviders';
 import AdminRecordings from './pages/AdminRecordings';
 import UserHistory from './pages/UserHistory';
-import { Loader2, ShieldCheck, Lock } from 'lucide-react';
+import { Loader2, ShieldCheck, Lock, Globe, User as UserIcon } from 'lucide-react';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean }> = ({ children, adminOnly }) => {
   const { user, loading, sudo } = useAuth();
@@ -45,14 +45,37 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
   }
 
   if (adminOnly && user.role === 'ADMIN' && !user.isAdminMode) {
+    // Decide which credential the modal asks for.
+    //   OTP is allowed regardless of auth method when enabled.
+    //   Otherwise: LOCAL → password, LDAP → identifier+password,
+    //   OIDC → browser-driven re-auth via /auth/sudo/oidc/.../start.
+    type SudoMode = 'OTP' | 'LOCAL_PASSWORD' | 'LDAP_REBIND' | 'OIDC_REAUTH' | 'OIDC_NO_PROVIDER';
+    let sudoMode: SudoMode;
+    if (user.isOtpEnabled) sudoMode = 'OTP';
+    else if (user.authMethod === 'LOCAL') sudoMode = 'LOCAL_PASSWORD';
+    else if (user.authMethod === 'LDAP') sudoMode = 'LDAP_REBIND';
+    else if (user.authMethod === 'OIDC' && user.authProviderId) sudoMode = 'OIDC_REAUTH';
+    else sudoMode = 'OIDC_NO_PROVIDER';
+
+    const handleOidcRedirect = () => {
+      if (!user.authProviderId) return;
+      // Full-page navigation — the OIDC handshake needs to set Lax
+      // cookies on a top-level GET, which a fetch() can't do.
+      window.location.href = `/api/auth/sudo/oidc/${user.authProviderId}/start`;
+    };
+
     const handleSudo = async (e: React.FormEvent) => {
       e.preventDefault();
       setError('');
       setElevating(true);
       try {
         const args: { code?: string; password?: string } = {};
-        if (user.isOtpEnabled && sudoCode.trim()) args.code = sudoCode.trim();
-        if (!user.isOtpEnabled && sudoPassword) args.password = sudoPassword;
+        if (sudoMode === 'OTP' && sudoCode.trim()) args.code = sudoCode.trim();
+        if (sudoMode === 'LOCAL_PASSWORD' && sudoPassword) args.password = sudoPassword;
+        if (sudoMode === 'LDAP_REBIND' && sudoPassword) args.password = sudoPassword;
+        // Note: no `identifier` field sent. The backend reads it from
+        // the JWT-bound user record so a caller can't pivot to another
+        // LDAP account by typing a colleague's credentials.
         await sudo(args);
         setSudoPassword('');
       } catch (err: any) {
@@ -75,71 +98,134 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; adminOnly?: boolean 
             </p>
           </div>
 
-          <form onSubmit={handleSudo} className="space-y-6">
-            {error && (
-              <div className="p-3 bg-danger/10 border border-danger/20 text-danger text-xs font-bold rounded-lg text-center">
-                {error}
-              </div>
-            )}
+          {error && (
+            <div className="mb-4 p-3 bg-danger/10 border border-danger/20 text-danger text-xs font-bold rounded-lg text-center">
+              {error}
+            </div>
+          )}
 
-            <div className="space-y-2">
-              <label className="t-eyebrow px-1">
-                {user.isOtpEnabled ? t('sudo.otpLabel') : t('sudo.passwordLabel')}
-              </label>
-              <div className="relative group">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
-                  <Lock size={16} />
+          {sudoMode === 'OIDC_REAUTH' && (
+            <div className="space-y-6">
+              <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg text-text-secondary text-xs leading-relaxed">
+                {t('sudo.oidcHint')}
+              </div>
+              <button
+                onClick={handleOidcRedirect}
+                className="w-full btn-primary h-12 flex items-center justify-center gap-2 font-bold shadow-lg shadow-primary/20"
+              >
+                <Globe size={18} />
+                {t('sudo.oidcButton')}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="w-full t-eyebrow hover:text-text-main transition-colors"
+              >
+                {t('sudo.cancel')}
+              </button>
+            </div>
+          )}
+
+          {sudoMode === 'OIDC_NO_PROVIDER' && (
+            <div className="space-y-6">
+              <div className="p-4 bg-danger/10 border border-danger/20 text-danger text-xs font-medium rounded-lg">
+                {t('sudo.oidcNoProvider')}
+              </div>
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="w-full t-eyebrow hover:text-text-main transition-colors"
+              >
+                {t('sudo.cancel')}
+              </button>
+            </div>
+          )}
+
+          {(sudoMode === 'OTP' || sudoMode === 'LOCAL_PASSWORD' || sudoMode === 'LDAP_REBIND') && (
+            <form onSubmit={handleSudo} className="space-y-6">
+              {sudoMode === 'LDAP_REBIND' && (
+                <div className="space-y-2">
+                  <label className="t-eyebrow px-1">{t('sudo.ldapIdentifierLabel')}</label>
+                  {/*
+                   * Read-only display of the stored identifier — the
+                   * backend uses this exact handle for the LDAP re-bind
+                   * regardless of what the client sends, so showing
+                   * the user *what* will be checked is honest and
+                   * removes the temptation to type someone else's
+                   * username.
+                   */}
+                  <div className="flex items-center gap-3 px-3 py-2 bg-background-app border border-border-light rounded-lg">
+                    <UserIcon size={16} className="text-text-secondary" />
+                    <span className="text-sm font-mono text-text-main">
+                      {user.username || user.email}
+                    </span>
+                  </div>
                 </div>
-                {user.isOtpEnabled ? (
-                  <input
-                    required
-                    autoFocus
-                    maxLength={6}
-                    className="form-input input-with-icon h-11 text-center text-lg tracking-[0.5em] font-mono"
-                    placeholder="000000"
-                    value={sudoCode}
-                    onChange={(e) => setSudoCode(e.target.value)}
-                  />
-                ) : (
-                  <input
-                    required
-                    autoFocus
-                    type="password"
-                    autoComplete="current-password"
-                    className="form-input input-with-icon h-11"
-                    placeholder={t('sudo.passwordPlaceholder')}
-                    value={sudoPassword}
-                    onChange={(e) => setSudoPassword(e.target.value)}
-                  />
+              )}
+
+              <div className="space-y-2">
+                <label className="t-eyebrow px-1">
+                  {sudoMode === 'OTP'
+                    ? t('sudo.otpLabel')
+                    : sudoMode === 'LDAP_REBIND'
+                    ? t('sudo.ldapPasswordLabel')
+                    : t('sudo.passwordLabel')}
+                </label>
+                <div className="relative group">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors">
+                    <Lock size={16} />
+                  </div>
+                  {sudoMode === 'OTP' ? (
+                    <input
+                      required
+                      autoFocus
+                      maxLength={6}
+                      className="form-input input-with-icon h-11 text-center text-lg tracking-[0.5em] font-mono"
+                      placeholder="000000"
+                      value={sudoCode}
+                      onChange={(e) => setSudoCode(e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      required
+                      autoFocus={sudoMode === 'LOCAL_PASSWORD' || sudoMode === 'LDAP_REBIND'}
+                      type="password"
+                      autoComplete="current-password"
+                      className="form-input input-with-icon h-11"
+                      placeholder={t('sudo.passwordPlaceholder')}
+                      value={sudoPassword}
+                      onChange={(e) => setSudoPassword(e.target.value)}
+                    />
+                  )}
+                </div>
+                {sudoMode !== 'OTP' && (
+                  <p className="text-[11px] text-text-secondary px-1 pt-1">
+                    {t('sudo.otpRecommendation')}
+                  </p>
                 )}
               </div>
-              {!user.isOtpEnabled && (
-                <p className="text-[11px] text-text-secondary px-1 pt-1">
-                  {t('sudo.otpRecommendation')}
-                </p>
-              )}
-            </div>
 
-            <button
-              disabled={elevating}
-              type="submit"
-              className="w-full btn-primary h-12 flex items-center justify-center gap-2 font-bold shadow-lg shadow-primary/20"
-            >
-              {elevating ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                t('sudo.activate')
-              )}
-            </button>
+              <button
+                disabled={elevating}
+                type="submit"
+                className="w-full btn-primary h-12 flex items-center justify-center gap-2 font-bold shadow-lg shadow-primary/20"
+              >
+                {elevating ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  t('sudo.activate')
+                )}
+              </button>
 
-            <button
-              type="button"
-              onClick={() => window.history.back()}
-              className="w-full t-eyebrow hover:text-text-main transition-colors"
-            >
-              {t('sudo.cancel')}
-            </button>
-          </form>
+              <button
+                type="button"
+                onClick={() => window.history.back()}
+                className="w-full t-eyebrow hover:text-text-main transition-colors"
+              >
+                {t('sudo.cancel')}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );

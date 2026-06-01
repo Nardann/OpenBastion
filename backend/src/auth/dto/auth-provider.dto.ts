@@ -62,6 +62,30 @@ export class LdapProviderConfigDto {
   @ValidateNested()
   @Type(() => LdapTlsOptionsDto)
   tlsOptions?: LdapTlsOptionsDto;
+
+  // Group sync — see LdapProviderConfig for semantics.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9_\-]+$/, { message: 'groupsAttribute invalide' })
+  groupsAttribute?: string;
+
+  // Reverse-lookup fallback (used when `groupsAttribute` is empty on the
+  // user entry — typical of OpenLDAP without the memberof overlay).
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  @Matches(/^[A-Za-z0-9 ,._=\-]+$/, { message: 'groupsSearchBase invalide' })
+  groupsSearchBase?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1024)
+  groupsSearchFilter?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  syncGroups?: boolean;
 }
 
 export class OidcProviderConfigDto {
@@ -93,15 +117,42 @@ export class OidcProviderConfigDto {
   @IsOptional()
   @IsObject()
   claimsMapping?: { email?: string; sub?: string };
+
+  /**
+   * Lab mode: skip TLS verification + accept private-IP discovery
+   * endpoints for THIS provider only. Use for self-hosted IdPs on a LAN
+   * with a self-signed cert (Authentik / Keycloak / Authelia). Never set
+   * this in production. See OidcProviderConfig for the security trade-off.
+   */
+  @IsOptional()
+  @IsBoolean()
+  allowInsecureTls?: boolean;
+
+  // Groups sync — see OidcProviderConfig for semantics.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9_\-]+$/, { message: 'groupsClaim invalide' })
+  groupsClaim?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  syncGroups?: boolean;
 }
 
 /**
- * Body of POST /auth/providers/upsert and PATCH /auth/providers/:id.
- * `config` is validated structurally below in the controller depending on
- * `type`, since `class-validator` doesn't have native discriminated union
- * support and we want a single endpoint for both protocols.
+ * Body of POST /auth/admin/providers — create.
+ * `config` is validated structurally by `validateProviderConfig` below
+ * because `class-validator` lacks native discriminated-union support.
  */
-export class UpsertAuthProviderDto {
+export class CreateAuthProviderDto {
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9 ._\-]+$/, {
+    message: 'Le nom ne peut contenir que des lettres, chiffres, espaces, points, tirets ou underscores',
+  })
+  name!: string;
+
   @IsEnum(AuthProviderType, { message: 'type doit être LDAP ou OIDC' })
   type!: AuthProviderType;
 
@@ -111,6 +162,29 @@ export class UpsertAuthProviderDto {
 
   @IsObject()
   config!: Record<string, unknown>;
+}
+
+/**
+ * Body of PATCH /auth/admin/providers/:id — partial update.
+ * `type` is intentionally NOT mutable: switching a provider's protocol
+ * after users were JIT-provisioned against it would orphan them.
+ */
+export class UpdateAuthProviderDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9 ._\-]+$/, {
+    message: 'Le nom ne peut contenir que des lettres, chiffres, espaces, points, tirets ou underscores',
+  })
+  name?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsObject()
+  config?: Record<string, unknown>;
 }
 
 export const AUTH_PROVIDER_TYPES = ['LDAP', 'OIDC'] as const;
