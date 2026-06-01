@@ -31,6 +31,23 @@ const ALLOWED_ENTITY_TYPES: AuditEntityType[] = [
 
 const UUID_RE = /^[0-9a-fA-F-]{36}$/;
 
+/**
+ * Defence against the "parameter tampering" class flagged by CodeQL:
+ * Express parses repeated query keys into an array, so
+ * `?from=foo&from=bar` arrives as `from: ['foo', 'bar']`. Casting to
+ * `string` without a runtime check silently passes the array into
+ * downstream code where it can confuse `parseInt`, `new Date`,
+ * `length` comparisons, and JSON-path queries. We assert string-or-
+ * undefined at the controller boundary and reject otherwise.
+ */
+function asOptionalString(value: unknown, paramName: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string') {
+    throw new BadRequestException(`Paramètre "${paramName}" invalide`);
+  }
+  return value;
+}
+
 @Controller('audit')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class AuditController {
@@ -40,15 +57,26 @@ export class AuditController {
   @SkipThrottle()
   @Roles(Role.ADMIN)
   async getLogs(
-    @Query('category') category?: string,
-    @Query('entityType') entityType?: string,
-    @Query('entityId') entityId?: string,
-    @Query('search') search?: string,
-    @Query('from') from?: string,
-    @Query('to') to?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('category') categoryRaw?: unknown,
+    @Query('entityType') entityTypeRaw?: unknown,
+    @Query('entityId') entityIdRaw?: unknown,
+    @Query('search') searchRaw?: unknown,
+    @Query('from') fromRaw?: unknown,
+    @Query('to') toRaw?: unknown,
+    @Query('page') pageRaw?: unknown,
+    @Query('limit') limitRaw?: unknown,
   ) {
+    // Reject array-shaped query params before any downstream code can
+    // be fooled — see `asOptionalString` for the threat model.
+    const category = asOptionalString(categoryRaw, 'category');
+    const entityType = asOptionalString(entityTypeRaw, 'entityType');
+    const entityId = asOptionalString(entityIdRaw, 'entityId');
+    const search = asOptionalString(searchRaw, 'search');
+    const from = asOptionalString(fromRaw, 'from');
+    const to = asOptionalString(toRaw, 'to');
+    const page = asOptionalString(pageRaw, 'page');
+    const limit = asOptionalString(limitRaw, 'limit');
+
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = Math.min(limit ? parseInt(limit, 10) : 50, 200);
     if (isNaN(pageNumber) || pageNumber < 1)
@@ -117,14 +145,22 @@ export class AuditController {
   @SkipThrottle()
   @Roles(Role.ADMIN)
   async resolveEntities(
-    @Query('users') users?: string,
-    @Query('machines') machines?: string,
-    @Query('machineGroups') machineGroups?: string,
-    @Query('groups') groups?: string,
-    @Query('permissions') permissions?: string,
-    @Query('providers') providers?: string,
-    @Query('recordings') recordings?: string,
+    @Query('users') usersRaw?: unknown,
+    @Query('machines') machinesRaw?: unknown,
+    @Query('machineGroups') machineGroupsRaw?: unknown,
+    @Query('groups') groupsRaw?: unknown,
+    @Query('permissions') permissionsRaw?: unknown,
+    @Query('providers') providersRaw?: unknown,
+    @Query('recordings') recordingsRaw?: unknown,
   ) {
+    const users = asOptionalString(usersRaw, 'users');
+    const machines = asOptionalString(machinesRaw, 'machines');
+    const machineGroups = asOptionalString(machineGroupsRaw, 'machineGroups');
+    const groups = asOptionalString(groupsRaw, 'groups');
+    const permissions = asOptionalString(permissionsRaw, 'permissions');
+    const providers = asOptionalString(providersRaw, 'providers');
+    const recordings = asOptionalString(recordingsRaw, 'recordings');
+
     const parse = (raw?: string): string[] => {
       if (!raw) return [];
       const ids = raw

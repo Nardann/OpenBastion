@@ -640,7 +640,17 @@ export class AuthController {
     @Req() request: any,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const state = request.query.state as string;
+    // CodeQL "Type confusion through parameter tampering": Express
+    // parses repeated query keys into an array. `?state=foo&state=bar`
+    // would arrive as `['foo', 'bar']`. The downstream `===` would
+    // accidentally fail-safe (array !== cookie string), but the
+    // diagnostic log does `state.length` which on an array lies about
+    // the byte length. Assert string-or-reject at the boundary.
+    const stateRaw: unknown = request.query?.state;
+    if (typeof stateRaw !== 'string') {
+      throw new UnauthorizedException('Invalid OIDC state parameter');
+    }
+    const state = stateRaw;
 
     // ─── Dispatch: sudo flow vs login flow ──────────────────────────
     // Both flows hit `/api/auth/oidc/callback` because the OIDC client

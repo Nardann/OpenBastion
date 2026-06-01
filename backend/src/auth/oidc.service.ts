@@ -158,6 +158,22 @@ export class OidcService {
    * also bypass cert validation. Returns null when lab mode is off.
    */
   private buildInsecureFetch(): { dispatcher: Agent; fetchFn: typeof fetch } | null {
+    // nosemgrep: javascript.express.security.audit.express-disabling-tls-verification.express-disabling-tls-verification
+    // nosemgrep: bypass-tls-verification
+    //
+    // SECURITY: this disables TLS verification ON PURPOSE. It is the
+    // implementation of the per-provider `allowInsecureTls` opt-in:
+    //   - off by default everywhere
+    //   - reachable only when an admin explicitly ticks the red
+    //     "Lab mode — disable TLS verification" checkbox in the OIDC
+    //     provider editor (`AdminProviders.tsx`)
+    //   - scoped to a single provider via a dedicated undici Agent,
+    //     never global / process-wide
+    //   - documented as "homelab / self-hosted IdP with self-signed
+    //     cert, NEVER use in production" in the UI hint + the
+    //     `OidcProviderConfig.allowInsecureTls` doc comment
+    // Static analysers flag this line because they can't see the
+    // gating; the comment above keeps the audit conversation closed.
     const dispatcher = new Agent({
       connect: {
         rejectUnauthorized: false,

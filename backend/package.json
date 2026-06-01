@@ -81,7 +81,8 @@
   "overrides": {
     "@nestjs/schematics": {
       "picomatch": "^4.0.4"
-    }
+    },
+    "@eslint/plugin-kit": "^0.3.4"
   },
   "jest": {
     "moduleFileExtensions": [
