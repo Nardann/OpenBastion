@@ -87,4 +87,28 @@ export class SettingsService implements OnModuleInit {
     delete this.cache['recordingRetentionValue'];
     delete this.cache['recordingRetentionUnit'];
   }
+
+  // ── Recording enabled flags ───────────────────────────────────────────────
+
+  isRecordingEnabled(protocol: 'ssh' | 'rdp'): boolean {
+    const key = protocol === 'ssh' ? 'recordingSSHEnabled' : 'recordingRDPEnabled';
+    // Default: enabled if env var is set
+    const stored = this.cache[key];
+    if (stored === 'false') return false;
+    if (stored === 'true') return true;
+    // Fall back to env-based default
+    return !!(process.env['RECORDINGS_PATH'] && process.env['RECORDINGS_ENABLED'] !== 'false');
+  }
+
+  async setRecordingEnabled(protocol: 'ssh' | 'rdp', enabled: boolean): Promise<void> {
+    const key = protocol === 'ssh' ? 'recordingSSHEnabled' : 'recordingRDPEnabled';
+    await this.set(key, enabled ? 'true' : 'false');
+  }
+
+  getRecordingEnabledSettings(): { ssh: boolean; rdp: boolean } {
+    return {
+      ssh: this.isRecordingEnabled('ssh'),
+      rdp: this.isRecordingEnabled('rdp'),
+    };
+  }
 }

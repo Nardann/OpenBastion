@@ -27,7 +27,8 @@ export class SessionRecorderService {
   constructor(private prisma: PrismaService) {
     if (RECORDINGS_ENABLED) {
       try {
-        fs.mkdirSync(RECORDINGS_PATH!, { recursive: true });
+        fs.mkdirSync(RECORDINGS_PATH!, { recursive: true, mode: 0o777 });
+        try { fs.chmodSync(RECORDINGS_PATH!, 0o777); } catch { /* ignore if already set */ }
         this.logger.log(`Session recording enabled → ${RECORDINGS_PATH}`);
       } catch (e) {
         this.logger.error(`Cannot create recordings directory (${RECORDINGS_PATH}): ${(e as Error).message} — recordings disabled`);
@@ -38,6 +39,11 @@ export class SessionRecorderService {
     }
   }
 
+  /** Check if recording is globally enabled (env-based). Protocol-level checks are in the gateways via SettingsService. */
+  isEnabled(): boolean {
+    return !!RECORDINGS_ENABLED;
+  }
+
   async start(opts: {
     sessionId: string;
     userId: string;
@@ -45,6 +51,7 @@ export class SessionRecorderService {
     cols: number;
     rows: number;
     title?: string;
+    protocol?: 'ssh' | 'rdp';
   }): Promise<void> {
     if (!RECORDINGS_ENABLED) return;
 
@@ -69,8 +76,59 @@ export class SessionRecorderService {
         userId: opts.userId,
         machineId: opts.machineId,
         filePath,
+        protocol: opts.protocol ?? 'ssh',
       },
     });
+  }
+
+  /** Register an RDP recording that was written directly by the gateway (no stream in service). */
+  async registerRdp(opts: {
+    sessionId: string;
+    userId: string;
+    machineId: string;
+    filePath: string;
+  }): Promise<void> {
+    if (!RECORDINGS_ENABLED) return;
+    await this.prisma.sessionRecording.create({
+      data: {
+        sessionId: opts.sessionId,
+        userId: opts.userId,
+        machineId: opts.machineId,
+        filePath: opts.filePath,
+        protocol: 'rdp',
+      },
+    });
+  }
+
+  async finalizeRdp(sessionId: string): Promise<void> {
+    try {
+      const record = await this.prisma.sessionRecording.findUnique({ where: { sessionId } });
+      if (!record) return;
+
+      let sizeBytes = 0;
+      let sha256: string | undefined;
+      try {
+        const stat = fs.statSync(record.filePath);
+        sizeBytes = stat.size;
+        const hash = crypto.createHash('sha256');
+        const readable = fs.createReadStream(record.filePath);
+        await new Promise<void>((resolve, reject) => {
+          readable.on('data', (chunk) => hash.update(chunk));
+          readable.on('end', resolve);
+          readable.on('error', reject);
+        });
+        sha256 = hash.digest('hex');
+      } catch {
+        // file may not exist if recording failed
+      }
+
+      await this.prisma.sessionRecording.update({
+        where: { sessionId },
+        data: { sizeBytes, sha256: sha256 ?? null, endedAt: new Date() },
+      });
+    } catch (e) {
+      this.logger.error(`Failed to finalise RDP recording ${sessionId}: ${(e as Error).message}`);
+    }
   }
 
   /** Returns the set of sessionIds currently being recorded (not yet ended). */

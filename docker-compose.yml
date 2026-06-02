@@ -44,20 +44,44 @@ services:
       retries: 5
 
   guacd:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.guacd
+    # Image officielle Apache Guacamole, alignée sur FreeRDP 3.x.
+    # Pourquoi pas notre build custom (./backend/Dockerfile.guacd) ?
+    #   - Debian Bookworm ne fournit que FreeRDP 2.x (EOL upstream) qui ne
+    #     sait plus negocier CredSSP face aux Windows 10/11 a jour
+    #     (`Security negotiation failed`).
+    #   - Debian Trixie a FreeRDP 3.15, mais guacamole-server 1.6.0 ne
+    #     compile pas contre cette version (API `freerdp.input` cassee).
+    #   - L'image officielle 1.6.0 (Alpine) embarque la combinaison
+    #     guacd/FreeRDP testee upstream, donc on l'utilise telle quelle.
+    # Le hardening (cap_drop, no-new-privileges, networks isoles) reste
+    # applique par ce compose, donc on ne perd rien cote securite.
+    image: guacamole/guacd:1.6.0
     container_name: bastion-guacd
     restart: always
-    profiles:
-      - rdp
-    # Jamais expose sur le reseau frontend, jamais de port publie sur l'hote.
+    # backend-net : seule la backend NestJS dialogue avec guacd sur 4822.
+    # frontend-net : NECESSAIRE pour l'egress. backend-net etant `internal: true`
+    #   (pas de NAT vers l'exterieur), un guacd qui n'aurait que ce reseau ne
+    #   pourrait JAMAIS joindre une machine Windows (`server unreachable`).
+    #   Aucun `ports:` n'est declare ici, donc guacd reste invisible depuis
+    #   l'hote ; on n'utilise frontend-net QUE pour sa route par defaut.
     networks:
       - backend-net
-    # Hardening : rien a ecrire, aucun privilege, tmpfs pour logs runtime.
-    read_only: true
+      - frontend-net
+    # Run as uid 1001 (same as the backend's "nestjs" user) so RDP recording
+    # files are owned by uid 1001 with guacd's hardcoded 0600 mode.
+    # The nestjs process can then read them as file owner without needing
+    # CAP_DAC_OVERRIDE (which is dropped in both containers for security).
+    user: "1001"
+    environment:
+      # FreeRDP needs a writable home directory to cache TLS certificates.
+      # uid 1001 has no named entry in the guacd image so its home defaults
+      # to "/" (read-only). Redirect HOME to the writable /tmp tmpfs.
+      HOME: /tmp
+    volumes:
+      - recordings_data:/var/lib/bastion/recordings
     tmpfs:
-      - /tmp:size=16m,noexec,nosuid
+      - /tmp:size=64m,noexec,nosuid
+      - /home/guacd:size=32m,uid=1001,gid=1001
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -99,7 +123,6 @@ services:
       # Connexion au daemon guacd pour le proxy RDP (reseau interne uniquement)
       GUACD_HOST: ${GUACD_HOST:-guacd}
       GUACD_PORT: ${GUACD_PORT:-4822}
-      ENABLE_RDP: ${ENABLE_RDP:-false}
       # SECURITY: jeton requis en production pour /metrics (sans, /metrics est désactivé)
       METRICS_TOKEN: ${METRICS_TOKEN:-}
       # NOTE: OIDC_ALLOW_INSECURE_TLS a été retiré — utilise un cert valide

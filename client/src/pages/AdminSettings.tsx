@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Globe, Save, CheckCircle2, XCircle, Loader2, Lock, Eye, EyeOff, Clock, Trash2 } from 'lucide-react';
+import { Globe, Save, CheckCircle2, XCircle, Loader2, Lock, Eye, EyeOff, Clock, Trash2, Video } from 'lucide-react';
 import api from '../services/api';
 import { useLang, AVAILABLE_LANGS } from '../context/LangContext';
 import type { Lang } from '../context/LangContext';
@@ -29,12 +29,19 @@ const AdminSettings: React.FC = () => {
   const [retentionSaving, setRetentionSaving] = useState(false);
   const [retentionMessage, setRetentionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Recording enabled state
+  const [recordingSSH, setRecordingSSH] = useState(false);
+  const [recordingRDP, setRecordingRDP] = useState(false);
+  const [recordingSaving, setRecordingSaving] = useState(false);
+  const [recordingMessage, setRecordingMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const [pubRes, retRes] = await Promise.all([
+        const [pubRes, retRes, recRes] = await Promise.all([
           api.get('/settings/public'),
           api.get('/settings/recording-retention'),
+          api.get('/settings/recording-enabled'),
         ]);
         const lang = (pubRes.data as any).defaultLang as Lang;
         if (lang) setSelectedLang(lang);
@@ -45,6 +52,10 @@ const AdminSettings: React.FC = () => {
           setRetentionValue(ret.value);
           setRetentionUnit(ret.unit as RetentionUnit);
         }
+
+        const rec = recRes.data as { ssh: boolean; rdp: boolean };
+        setRecordingSSH(rec.ssh);
+        setRecordingRDP(rec.rdp);
       } catch {
         // ignore
       } finally {
@@ -95,6 +106,22 @@ const AdminSettings: React.FC = () => {
       setRetentionMessage({ type: 'error', text: err.message || t('adminSettings.retention.saveError') });
     } finally {
       setRetentionSaving(false);
+    }
+  };
+
+  const handleSaveRecording = async (protocol: 'ssh' | 'rdp', enabled: boolean) => {
+    try {
+      setRecordingSaving(true);
+      setRecordingMessage(null);
+      const res = await api.patch('/settings/recording-enabled', { protocol, enabled });
+      const data = res.data as { ssh: boolean; rdp: boolean };
+      setRecordingSSH(data.ssh);
+      setRecordingRDP(data.rdp);
+      setRecordingMessage({ type: 'success', text: t('adminSettings.recording.saveSuccess') });
+    } catch (err: any) {
+      setRecordingMessage({ type: 'error', text: err.message || t('adminSettings.recording.saveError') });
+    } finally {
+      setRecordingSaving(false);
     }
   };
 
@@ -288,6 +315,63 @@ const AdminSettings: React.FC = () => {
                 {t('adminSettings.retention.clear')}
               </button>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Recording settings */}
+      <div className="bg-background-surface border border-border-light rounded-xl overflow-hidden shadow-sm max-w-lg">
+        <div className="p-6 border-b border-border-light bg-background-app flex items-center gap-3">
+          <Video className="text-primary" size={20} />
+          <div>
+            <h2 className="font-bold text-text-main">{t('adminSettings.recording.title')}</h2>
+            <p className="text-xs text-text-secondary mt-0.5">{t('adminSettings.recording.subtitle')}</p>
+          </div>
+        </div>
+        <div className="p-6 space-y-4">
+          {recordingMessage && (
+            <div className={`p-3 rounded-lg border flex items-center gap-2 text-sm ${
+              recordingMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              {recordingMessage.type === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+              {recordingMessage.text}
+            </div>
+          )}
+          {/* SSH toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-border-light bg-background-app">
+            <div>
+              <p className="font-medium text-text-main text-sm">{t('adminSettings.recording.ssh')}</p>
+              <p className="text-xs text-text-secondary mt-0.5">{t('adminSettings.recording.sshDesc')}</p>
+            </div>
+            <button
+              onClick={() => handleSaveRecording('ssh', !recordingSSH)}
+              disabled={recordingSaving}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${
+                recordingSSH ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                recordingSSH ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+          {/* RDP toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-border-light bg-background-app">
+            <div>
+              <p className="font-medium text-text-main text-sm">{t('adminSettings.recording.rdp')}</p>
+              <p className="text-xs text-text-secondary mt-0.5">{t('adminSettings.recording.rdpDesc')}</p>
+            </div>
+            <button
+              onClick={() => handleSaveRecording('rdp', !recordingRDP)}
+              disabled={recordingSaving}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${
+                recordingRDP ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                recordingRDP ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
           </div>
         </div>
       </div>

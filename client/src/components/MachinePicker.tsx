@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Loader2, Server, Terminal } from 'lucide-react';
+import { X, Loader2, Server, Terminal, Monitor } from 'lucide-react';
 import api from '../services/api';
 import { useLang } from '../context/LangContext';
 
@@ -13,7 +13,7 @@ interface Machine {
 }
 
 interface Props {
-  onSelect: (machine: { id: string; name: string }) => void;
+  onSelect: (machine: { id: string; name: string; protocol: string }) => void;
   onClose: () => void;
 }
 
@@ -27,9 +27,7 @@ const MachinePicker: React.FC<Props> = ({ onSelect, onClose }) => {
   useEffect(() => {
     api
       .get<Machine[]>('/machines')
-      .then((res) =>
-        setMachines((res.data as Machine[]).filter((m) => m.protocol !== 'RDP')),
-      )
+      .then((res) => setMachines(res.data as Machine[]))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -104,16 +102,24 @@ const MachinePicker: React.FC<Props> = ({ onSelect, onClose }) => {
               {filtered.map((machine) => (
                 <button
                   key={machine.id}
-                  onClick={() => onSelect({ id: machine.id, name: machine.name })}
+                  onClick={() => onSelect({ id: machine.id, name: machine.name, protocol: machine.protocol })}
                   className="text-left p-3.5 rounded-xl border border-slate-700/80 hover:border-primary/50 hover:bg-primary/5 transition-all group"
                 >
                   <div className="flex items-center gap-2 mb-1.5">
-                    <Server
-                      size={13}
-                      className="text-slate-500 group-hover:text-primary transition-colors shrink-0"
-                    />
+                    {machine.protocol === 'RDP' ? (
+                    <Monitor size={13} className="text-blue-400 group-hover:text-blue-300 transition-colors shrink-0" />
+                  ) : (
+                    <Server size={13} className="text-slate-500 group-hover:text-primary transition-colors shrink-0" />
+                  )}
                     <span className="font-bold text-sm text-white truncate">
                       {machine.name}
+                    </span>
+                    <span className={`ml-auto text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                      machine.protocol === 'RDP'
+                        ? 'bg-blue-500/20 text-blue-400'
+                        : 'bg-green-500/20 text-green-400'
+                    }`}>
+                      {machine.protocol === 'RDP' ? t('terminal.protocolRDP') : t('terminal.protocolSSH')}
                     </span>
                   </div>
                   <span className="font-mono text-xs text-slate-500">

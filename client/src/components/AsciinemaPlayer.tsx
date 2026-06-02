@@ -106,6 +106,20 @@ const AsciinemaPlayer: React.FC<Props> = ({ castUrl, hudUser, hudMachine }) => {
       .filter((e) => e[1] === 'o' && e[0] < fromOffset)
       .forEach(([, , data]) => termRef.current?.write(data));
 
+    // Ultra-short recordings (e.g. a quick login/logout, < 0.4s): there is no
+    // meaningful timeline to animate. Render the whole content at once and stay
+    // paused instead of flipping play→pause within a few milliseconds (which
+    // looked like "play does nothing").
+    if (duration - fromOffset <= 0.4) {
+      events
+        .filter((e) => e[1] === 'o' && e[0] >= fromOffset)
+        .forEach(([, , data]) => termRef.current?.write(data));
+      setElapsed(duration);
+      setPlaying(false);
+      playStartRef.current = null;
+      return;
+    }
+
     const speed = SPEEDS[speedIdx];
     const wallStart = Date.now();
     playStartRef.current = { wallTime: wallStart, castOffset: fromOffset };

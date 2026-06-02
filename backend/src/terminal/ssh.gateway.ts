@@ -21,6 +21,7 @@ import { AuditService, AuditCategory } from '../audit/audit.service';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
 import { UsersService } from '../users/users.service';
 import { SessionRecorderService } from './recording/session-recorder.service';
+import { SettingsService } from '../settings/settings.service';
 import { getCorsConfig } from '../common/config/cors.config';
 import * as crypto from 'node:crypto';
 
@@ -79,6 +80,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly tokenBlacklistService: TokenBlacklistService,
     private readonly usersService: UsersService,
     private readonly recorder: SessionRecorderService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -199,7 +201,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       await this.auditService.log({
         actorId: user?.sub ?? null,
-        action: 'TERMINAL: SESSION_CLOSED',
+        action: 'SSH: SESSION_CLOSED',
         category: AuditCategory.TERMINAL,
         authMethod: user?.authMethod ?? null,
         ipAddress: this.getClientIp(client),
@@ -284,7 +286,7 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // dashboards even though the request is benign on its own.
         await this.auditService.log({
           actorId: user.sub,
-          action: 'TERMINAL: SESSION_DENIED',
+          action: 'SSH: SESSION_DENIED',
           category: AuditCategory.TERMINAL,
           authMethod: user.authMethod,
           ipAddress: this.getClientIp(client),
@@ -367,8 +369,8 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
               .log({
                 actorId: session.userId,
                 action: tokenRevoked
-                  ? 'TERMINAL: SESSION_KILLED_TOKEN_REVOKE'
-                  : 'TERMINAL: SESSION_KILLED_RBAC_REVOKE',
+                  ? 'SSH: SESSION_KILLED_TOKEN_REVOKE'
+                  : 'SSH: SESSION_KILLED_RBAC_REVOKE',
                 category: AuditCategory.TERMINAL,
                 authMethod: user.authMethod,
                 ipAddress: this.getClientIp(client),
@@ -402,18 +404,21 @@ export class SshGateway implements OnGatewayConnection, OnGatewayDisconnect {
         accessPoll,
       });
 
-      await this.recorder.start({
-        sessionId,
-        userId: user.sub,
-        machineId: data.machineId,
-        cols: data.cols ?? 80,
-        rows: data.rows ?? 24,
-        title: `${machine.name} (${machine.ip})`,
-      });
+      if (this.settingsService.isRecordingEnabled('ssh')) {
+        await this.recorder.start({
+          sessionId,
+          userId: user.sub,
+          machineId: data.machineId,
+          cols: data.cols ?? 80,
+          rows: data.rows ?? 24,
+          title: `${machine.name} (${machine.ip})`,
+          protocol: 'ssh',
+        });
+      }
 
       await this.auditService.log({
         actorId: user.sub,
-        action: 'TERMINAL: SESSION_STARTED',
+        action: 'SSH: SESSION_STARTED',
         category: AuditCategory.TERMINAL,
         authMethod: user.authMethod,
         ipAddress: this.getClientIp(client),

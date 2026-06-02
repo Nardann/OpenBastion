@@ -7,8 +7,7 @@ import { LangProvider, useLang } from './context/LangContext';
 import AdminSettings from './pages/AdminSettings';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Terminal from './pages/Terminal';
-import RdpSession from './pages/RdpSession';
+import Session from './pages/Session';
 import Profile from './pages/Profile';
 import AdminLayout from './components/AdminLayout';
 import AdminDashboard from './pages/AdminDashboard';
@@ -255,7 +254,7 @@ const App: React.FC = () => {
               path="/session/:id"
               element={
                 <ProtectedRoute>
-                  <Terminal />
+                  <Session />
                 </ProtectedRoute>
               }
             />
@@ -263,7 +262,7 @@ const App: React.FC = () => {
               path="/rdp/:id"
               element={
                 <ProtectedRoute>
-                  <RdpSession />
+                  <Session />
                 </ProtectedRoute>
               }
             />

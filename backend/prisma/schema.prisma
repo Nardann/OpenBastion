@@ -238,16 +238,18 @@ model RefreshToken {
 }
 
 model SessionRecording {
-  id          String    @id @default(uuid())
-  sessionId   String    @unique
-  userId      String
-  machineId   String
-  filePath    String
-  sizeBytes   Int       @default(0)
-  sha256      String?
-  startedAt   DateTime  @default(now())
-  endedAt     DateTime?
-  pinned      Boolean   @default(false)
+  id             String    @id @default(uuid())
+  sessionId      String    @unique
+  userId         String
+  machineId      String
+  filePath       String
+  keystrokesPath String?
+  protocol       String    @default("ssh")
+  sizeBytes      Int       @default(0)
+  sha256         String?
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  pinned         Boolean   @default(false)
 
   @@index([userId])
   @@index([machineId])

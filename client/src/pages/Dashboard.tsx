@@ -222,7 +222,7 @@ const Dashboard: React.FC = () => {
 
                 <Link
                   to={machine.protocol === 'RDP' ? `/rdp/${machine.id}` : `/session/${machine.id}`}
-                  state={machine.protocol !== 'RDP' ? { machineName: machine.name } : undefined}
+                  state={{ machineName: machine.name, protocol: machine.protocol }}
                   className="btn-primary flex items-center justify-center gap-2 w-full text-sm"
                 >
                   {machine.protocol === 'RDP' ? (

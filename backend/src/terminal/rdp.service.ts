@@ -22,6 +22,8 @@ export interface RdpConnectionParams {
   height: number;
   dpi?: number | undefined;
   allowCopyPaste: boolean;
+  recordingPath?: string | undefined;
+  recordingName?: string | undefined;
 }
 
 /**
@@ -135,8 +137,13 @@ export class RdpService {
           `Expected "args" instruction from guacd, got "${argsInstr.opcode}"`,
         );
       }
-      // First arg is protocol version, rest are the named parameters guacd wants
-      const [, ...argNames] = argsInstr.args;
+      // guacd 1.5+ emits `args,VERSION_X_Y_Z,hostname,port,...` and expects
+      // the client to echo the same protocol version as the FIRST element
+      // of `connect`. Mismatching the version OR omitting it yields the
+      // dreaded "Client did not return the expected number of arguments"
+      // error on guacd's side. So we keep the version aside and prepend it
+      // verbatim when we build the `connect` instruction.
+      const [protocolVersion, ...argNames] = argsInstr.args;
 
       // 3. Client capabilities (server-side: we pose as the "client")
       socket.write(
@@ -151,9 +158,12 @@ export class RdpService {
       socket.write(encodeInstruction('image', ['image/png', 'image/jpeg']));
       socket.write(encodeInstruction('timezone', ['UTC']));
 
-      // 4. Send `connect` with values matching the advertised argNames
+      // 4. Send `connect` with the same VERSION_X_Y_Z prefix guacd sent us,
+      //    followed by one value per advertised argName, in the same order.
       const values = argNames.map((name) => this.resolveArgValue(name, params));
-      socket.write(encodeInstruction('connect', values));
+      socket.write(
+        encodeInstruction('connect', [protocolVersion ?? '', ...values]),
+      );
 
       // Remove listeners: the gateway will re-bind them for pipe mode.
       socket.off('data', dataListener);
@@ -207,12 +217,23 @@ export class RdpService {
         return 'false';
       case 'enable-drive':
         return 'false';
+      // Visual features: ENABLED by default. Disabling all of them is a
+      // known way to get a Windows host to render a blank frame buffer
+      // while waiting for input — counterintuitively, the safer default
+      // is to let Windows draw its usual desktop. Bandwidth/latency
+      // overhead is negligible inside a LAN bastion deployment.
       case 'enable-wallpaper':
-        return 'false';
+        return 'true';
       case 'enable-theming':
-        return 'false';
+        return 'true';
       case 'enable-desktop-composition':
-        return 'false';
+        return 'true';
+      case 'enable-font-smoothing':
+        return 'true';
+      case 'enable-full-window-drag':
+        return 'true';
+      case 'enable-menu-animations':
+        return 'true';
       case 'disable-copy':
         return copyPasteDisabled;
       case 'disable-paste':
@@ -222,7 +243,29 @@ export class RdpService {
       case 'disable-upload':
         return 'true';
       case 'color-depth':
-        return '24';
+        return '32';
+      case 'force-lossless':
+        // Force PNG over JPEG. Without this, guacd alternates JPEG/PNG
+        // depending on bandwidth heuristics and certain Windows hosts end
+        // up sending a degraded initial frame.
+        return 'true';
+      case 'disable-bitmap-caching':
+        // Disable the RDP bitmap cache. The cache can desync on first
+        // connect, leaving the framebuffer in a half-painted state until
+        // the user provokes a full refresh.
+        return 'true';
+      case 'disable-offscreen-caching':
+        return 'true';
+      case 'disable-glyph-caching':
+        return 'true';
+      case 'disable-gfx':
+        // guacd 1.6 uses RDP Graphics Pipeline (GFX) by default with
+        // FreeRDP 3, which encodes the framebuffer in surface instructions
+        // that guacamole-common-js < 1.6 silently ignores — symptom:
+        // cursor visible, framebuffer never paints. Apache hasn't published
+        // common-js 1.6 to npm, so we stay on 1.5 and ask guacd to fall
+        // back to the legacy bitmap pipeline.
+        return 'true';
       case 'width':
         return String(p.width);
       case 'height':
@@ -235,6 +278,13 @@ export class RdpService {
         return 'OpenBastion';
       case 'server-layout':
         return 'en-us-qwerty';
+      case 'recording-path':
+        return p.recordingPath ?? '';
+      case 'recording-name':
+        return p.recordingName ?? '';
+      case 'recording-include-keys':
+        // Keystroke logging disabled — we only keep the video recording.
+        return '';
       default:
         return '';
     }

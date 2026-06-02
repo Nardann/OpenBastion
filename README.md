@@ -137,7 +137,6 @@ the repo root, picked up by `docker-compose.yml`.
 | `FRONTEND_HTTPS_PORT` | `443` | Host port mapping for the web UI. |
 | `BACKEND_PORT` | `3000` | Internal port for the API container. Not exposed. |
 | `CORS_ALLOWED_ORIGINS` | `https://localhost` | Comma-separated HTTPS origins. Plaintext HTTP origins are always rejected. |
-| `ENABLE_RDP` | `false` | Build & start the guacd companion container. Required for any RDP/VNC machine. |
 | `RECORDINGS_PATH` | `/var/lib/bastion/recordings` | Volume path for asciinema recordings. |
 | `RECORDINGS_ENABLED` | `true` | Set to `false` to disable session recording entirely. |
 | `DEFAULT_LANG` | `fr` | Default UI language (`fr` or `en`). Configurable later in admin settings. |

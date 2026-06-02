@@ -107,9 +107,8 @@ const TerminalPane: React.FC<TerminalPaneProps> = ({
     term.onData((data) => socket.emit('input', data));
     term.onResize((size) => socket.emit('resize', size));
 
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height ?? 0;
-      if (h > 0) fitAddon.fit();
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(() => fitAddon.fit());
     });
     ro.observe(terminalRef.current);
 

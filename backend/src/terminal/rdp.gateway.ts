@@ -20,10 +20,14 @@ import { ConfigService } from '../config/config.service';
 import { AuditService, AuditCategory } from '../audit/audit.service';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
 import { UsersService } from '../users/users.service';
+import { SettingsService } from '../settings/settings.service';
+import { SessionRecorderService } from './recording/session-recorder.service';
 import { parseCookies } from '../common/utils/security';
 import { getCorsConfig } from '../common/config/cors.config';
 import { encodeInstruction } from './guac-protocol';
 import { StartRdpSessionDto, ResizeRdpDto } from './dto/rdp.dto';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 /**
  * WebSocket gateway that proxies browser <-> guacd for RDP sessions.
@@ -56,6 +60,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
       socket: net.Socket;
       machineId: string;
       userId: string;
+      sessionId: string;
       startTime: Date;
       timeoutId: NodeJS.Timeout;
       inactivityTimer: NodeJS.Timeout;
@@ -64,6 +69,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // input event arrives (RDP streams are mostly server→client).
       accessPoll: NodeJS.Timeout;
       accessCache?: { allowed: boolean; lastChecked: number };
+      recording?: { filePath: string; startedAt: number };
     }
   >();
   // SECURITY (F-02)
@@ -83,9 +89,26 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly auditService: AuditService,
     private readonly tokenBlacklistService: TokenBlacklistService,
     private readonly usersService: UsersService,
+    private readonly settingsService: SettingsService,
+    private readonly recorderService: SessionRecorderService,
   ) {}
 
-  async handleConnection(client: Socket) {
+  handleConnection(client: Socket) {
+    // Socket.IO does NOT await this hook before accepting the namespace
+    // connection and delivering buffered events to it. Guacamole.Client
+    // calls tunnel.connect() ~1 ms after the namespace ack, so a `start-
+    // session` event was racing the async JWT verify + DB lookup below and
+    // landing while `client.data.user` was still unset. We now publish a
+    // promise on `client.data.authReady` that every other handler awaits
+    // before reading `client.data.user`.
+    client.data.authReady = this.authenticateSocket(client);
+    // Swallow rejection here — `authenticateSocket` already disconnects on
+    // failure, but an unhandled rejection on the promise object itself
+    // would still trigger Node's unhandledRejection handler.
+    client.data.authReady.catch(() => undefined);
+  }
+
+  private async authenticateSocket(client: Socket): Promise<void> {
     const clientIp = this.getClientIp(client);
     const now = Date.now();
     const attempts = this.connectionAttempts.get(clientIp) || {
@@ -191,6 +214,11 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         },
       });
 
+      // Finalize RDP recording if active (video only — guacd writes the .guac file)
+      if (session.recording) {
+        await this.recorderService.finalizeRdp(session.sessionId);
+      }
+
       try {
         session.socket.destroy();
       } catch {
@@ -212,6 +240,9 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: StartRdpSessionDto,
   ) {
+    // Wait for handleConnection's async auth (JWT verify + DB lookup) to
+    // finish — see the comment in handleConnection for why this is needed.
+    if (client.data.authReady) await client.data.authReady;
     const user = client.data.user;
     if (!user) {
       client.emit('error', 'Authentication required');
@@ -245,6 +276,23 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         data.machineId,
       );
 
+      // Determine recording path if RDP recording is enabled
+      const rdpRecordingEnabled = this.settingsService.isRecordingEnabled('rdp');
+      const recordingsBasePath = process.env['RECORDINGS_PATH'];
+      const sessionId = client.id;
+      let recordingPath: string | undefined;
+      let recordingName: string | undefined;
+      if (rdpRecordingEnabled && recordingsBasePath) {
+        const rdpDir = path.join(recordingsBasePath, 'rdp');
+        try {
+          fs.mkdirSync(rdpDir, { recursive: true, mode: 0o777 });
+          // Ensure guacd (uid 1000) can write into this directory
+          fs.chmodSync(rdpDir, 0o777);
+        } catch { /* ignore */ }
+        recordingPath = rdpDir;
+        recordingName = sessionId;
+      }
+
       const { socket, leftover } = await this.rdpService.createStream({
         host: machine.ip,
         port: machine.port,
@@ -260,6 +308,8 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         width: data.width,
         height: data.height,
         allowCopyPaste: machine.allowCopyPaste,
+        recordingPath,
+        recordingName,
       });
 
       const timeoutId = setTimeout(
@@ -327,15 +377,32 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       }, this.RBAC_POLL_INTERVAL_MS);
 
-      this.sessions.set(client.id, {
+      // Register RDP recording in DB if enabled (video only — guacd writes the .guac file)
+      let recordingEntry: { filePath: string; startedAt: number } | undefined;
+      if (rdpRecordingEnabled && recordingsBasePath && recordingPath && recordingName) {
+        // guacd writes the recording file as exactly <recording-path>/<recording-name> with no extension
+        const filePath = path.join(recordingPath, recordingName);
+        await this.recorderService.registerRdp({
+          sessionId,
+          userId: user.sub,
+          machineId: data.machineId,
+          filePath,
+        });
+        recordingEntry = { filePath, startedAt: Date.now() };
+      }
+
+      const sessionEntry: Parameters<typeof this.sessions.set>[1] = {
         socket,
         machineId: data.machineId,
         userId: user.sub,
+        sessionId,
         startTime: new Date(),
         timeoutId,
         inactivityTimer: this.createInactivityTimer(client),
         accessPoll,
-      });
+      };
+      if (recordingEntry) sessionEntry.recording = recordingEntry;
+      this.sessions.set(client.id, sessionEntry);
 
       await this.auditService.log({
         actorId: user.sub,
@@ -406,6 +473,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.emit('error', 'Message too large');
       return;
     }
+    if (client.data.authReady) await client.data.authReady;
     const session = this.sessions.get(client.id);
     const user = client.data.user;
     if (!session || !user) return;
@@ -447,6 +515,7 @@ export class RdpGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() data: ResizeRdpDto,
   ) {
+    if (client.data.authReady) await client.data.authReady;
     const session = this.sessions.get(client.id);
     if (!session) return;
     if (session.socket.writable) {
