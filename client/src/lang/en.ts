@@ -107,6 +107,12 @@ const en = {
     filterByGroup: "Filter by group",
     resetFilters: "Reset filters",
     noMachines: "No machines available for your account.",
+    editMode: "Edit mode",
+    editModeActive: "Edit mode active",
+    editMachine: "Edit machine",
+    managePerms: "Manage permissions",
+    editSaved: "Machine updated.",
+    editError: "Update failed.",
   },
   terminal: {
     title: "Bastion Secure Shell",

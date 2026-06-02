@@ -21,7 +21,6 @@ enum AuthMethod {
 enum AccessLevel {
   OWNER    // Full management of the machine entry
   OPERATOR // Can connect and type in terminal
-  VIEWER   // Can only view live session or recordings
 }
 
 enum Protocol {
