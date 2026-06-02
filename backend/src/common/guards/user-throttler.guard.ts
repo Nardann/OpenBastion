@@ -1,28 +1,61 @@
-import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { Injectable, ExecutionContext } from '@nestjs/common';
+import {
+  ThrottlerGuard,
+  InjectThrottlerOptions,
+  InjectThrottlerStorage,
+} from '@nestjs/throttler';
+import type {
+  ThrottlerModuleOptions,
+  ThrottlerStorage,
+} from '@nestjs/throttler';
+import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
 
 /**
  * Custom throttler guard.
  *
- * SECURITY (F-01 fix): we override ONLY `getTracker` so that requests are
- * counted per authenticated user (when a JWT is present) rather than just
- * by IP — that lets us cap user actions even behind a NAT/CGNAT.
+ * POLICY: rate limiting is intentionally scoped to AUTHENTICATION only.
+ * Once a request carries a VALID JWT session cookie, we skip throttling
+ * entirely — logged-in users browsing machines, recordings or audit logs
+ * are never rate limited. Unauthenticated requests (login / login-otp /
+ * password-reset / OIDC, etc.) still go through the `auth` throttler so
+ * brute force against the authentication surface stays capped.
  *
- * We deliberately DO NOT override `getThrottlers` anymore. The previous
- * implementation returned only the `user` throttler, which silently
- * neutralised every per-route `@Throttle({ auth: { ... } })` decorator
- * on login / login-otp / sudo / oidc / refresh / otp endpoints. The
- * intended `THROTTLE_AUTH_LIMIT=20 / 15 min` was never enforced — brute
- * force was capped only by the much looser anonymous user throttle
- * (~30/min). Letting the parent `getThrottlers` resolve the active set
- * from `ThrottlerModule.forRoot([...])` + the route-level `@Throttle`
- * metadata restores the declarative behaviour intended by the auth
- * controller.
+ * NOTE: this guard runs as a global APP_GUARD, i.e. BEFORE the controller
+ * level `JwtAuthGuard`, so `req.user` is not populated yet. We therefore
+ * verify the `jwt` cookie's signature ourselves. We deliberately verify
+ * (not just sniff for presence) so an attacker can't bypass the login
+ * throttle by attaching a junk `jwt` cookie to brute-force requests.
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
+  constructor(
+    @InjectThrottlerOptions() options: ThrottlerModuleOptions,
+    @InjectThrottlerStorage() storageService: ThrottlerStorage,
+    reflector: Reflector,
+    private readonly jwtService: JwtService,
+  ) {
+    super(options, storageService, reflector);
+  }
+
+  protected override async shouldSkip(
+    context: ExecutionContext,
+  ): Promise<boolean> {
+    const req = context.switchToHttp().getRequest();
+    const token: string | undefined = req?.cookies?.jwt;
+    if (token) {
+      try {
+        this.jwtService.verify(token);
+        // Valid session → authenticated user → never throttled.
+        return true;
+      } catch {
+        // Invalid/expired token: fall through and apply the throttle.
+      }
+    }
+    return super.shouldSkip(context);
+  }
+
   protected override async getTracker(req: Record<string, any>): Promise<string> {
-    const userId: string | undefined = req.user?.sub;
-    return userId ?? req.ip ?? 'unknown';
+    return req.ip ?? 'unknown';
   }
 }

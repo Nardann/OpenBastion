@@ -63,7 +63,7 @@ const AdminMachines = () => {
   const [permissions, setPermissions] = useState<any[]>([]);
   const [permFormData, setPermFormData] = useState({
     targetType: 'user' as 'user' | 'group',
-    level: 'OPERATOR' as 'OWNER' | 'OPERATOR' | 'VIEWER'
+    level: 'OPERATOR' as 'OWNER' | 'OPERATOR'
   });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [selectedTarget, setSelectedTarget] = useState<any>(null);
@@ -633,8 +633,8 @@ const AdminMachines = () => {
                   <div className="flex flex-col md:flex-row items-end gap-4 pt-2">
                     <div className="flex-1 w-full space-y-1.5">
                       <label className="t-eyebrow ml-1">{t('adminMachines.perm.level')}</label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {(['VIEWER', 'OPERATOR', 'OWNER'] as const).map((lvl) => (
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['OPERATOR', 'OWNER'] as const).map((lvl) => (
                           <button
                             key={lvl}
                             type="button"
@@ -645,7 +645,7 @@ const AdminMachines = () => {
                                 : 'bg-background-surface text-text-secondary border-border-light hover:border-primary/30'
                             }`}
                           >
-                            {lvl === 'VIEWER' ? t('adminMachines.perm.viewer') : lvl === 'OPERATOR' ? t('adminMachines.perm.operator') : t('adminMachines.perm.owner')}
+                            {lvl === 'OPERATOR' ? t('adminMachines.perm.operator') : t('adminMachines.perm.owner')}
                           </button>
                         ))}
                       </div>
@@ -686,7 +686,7 @@ const AdminMachines = () => {
                                 perm.level === 'OPERATOR' ? 'bg-success/10 text-success border border-success/20' :
                                 'bg-primary/10 text-primary border border-primary/20'
                               }`}>
-                                {perm.level}
+                                {perm.level === 'OWNER' ? t('adminMachines.perm.owner') : t('adminMachines.perm.operator')}
                               </span>
                               <span className="text-[9px] text-text-secondary opacity-60">• {perm.user ? t('adminMachines.perm.individual') : t('adminMachines.perm.group')}</span>
                             </div>
@@ -882,7 +882,7 @@ const AdminMachines = () => {
 
                 <div className="space-y-2">
                   <label className="t-eyebrow ml-1">{t('adminMachines.modal.username')}</label>
-                  <input type="text" className="form-input w-full h-11 font-medium" placeholder={t('adminMachines.modal.usernamePlaceholder')} required value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
+                  <input type="text" className="form-input w-full h-11 font-medium" placeholder={t('adminMachines.modal.usernamePlaceholder')} required={!editingId} value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <label className="t-eyebrow ml-1">{t('adminMachines.modal.passwordLabel')}</label>

@@ -107,6 +107,12 @@ const fr = {
     filterByGroup: "Filtrer par groupe",
     resetFilters: "Réinitialiser les filtres",
     noMachines: "Aucune machine disponible pour votre compte.",
+    editMode: "Mode édition",
+    editModeActive: "Mode édition actif",
+    editMachine: "Modifier la machine",
+    managePerms: "Gérer les permissions",
+    editSaved: "Machine mise à jour.",
+    editError: "Échec de la mise à jour.",
   },
   terminal: {
     title: "Bastion Secure Shell",

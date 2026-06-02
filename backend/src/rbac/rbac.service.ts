@@ -77,9 +77,8 @@ export class RbacService {
     required: AccessLevel,
   ): boolean {
     const levels: Record<AccessLevel, number> = {
-      VIEWER: 1,
-      OPERATOR: 2,
-      OWNER: 3,
+      OPERATOR: 1,
+      OWNER: 2,
     };
     const actualValue = levels[actual] ?? 0;
     const requiredValue = levels[required] ?? 0;

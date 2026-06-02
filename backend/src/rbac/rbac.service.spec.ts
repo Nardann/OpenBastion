@@ -65,13 +65,13 @@ describe('RbacService', () => {
         id: 'user1',
         role: Role.USER,
         groups: [],
-        permissions: [{ level: AccessLevel.VIEWER }],
+        permissions: [{ level: AccessLevel.OPERATOR }],
       });
 
       const result = await service.hasAccess(
         'user1',
         'machine1',
-        AccessLevel.OPERATOR,
+        AccessLevel.OWNER,
       );
       expect(result).toBe(false);
     });
@@ -107,7 +107,7 @@ describe('RbacService', () => {
       const result = await service.hasAccess(
         'user1',
         'machine1',
-        AccessLevel.VIEWER,
+        AccessLevel.OPERATOR,
       );
       expect(result).toBe(false);
     });

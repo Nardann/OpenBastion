@@ -64,7 +64,7 @@ describe('PermissionsController', () => {
         controller.create({
           userId: 'nonexistent@example.com',
           machineId: 'm1',
-          level: AccessLevel.VIEWER,
+          level: AccessLevel.OPERATOR,
         }),
       ).rejects.toThrow(BadRequestException);
     });

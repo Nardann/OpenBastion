@@ -213,8 +213,12 @@ export class MachinesController {
   }
 
 
+  // Editable by global admins AND by users holding the OWNER access level on
+  // this specific machine (the RbacGuard resolves the level from params.id and
+  // grants ADMIN unconditionally). This is what powers the dashboard "edit
+  // mode" pencil for machine owners.
   @Patch(':id')
-  @Roles(Role.ADMIN)
+  @RequireAccessLevel(AccessLevel.OWNER)
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: UpdateMachineDto,
@@ -283,7 +287,7 @@ export class MachinesController {
 
   @Get(':id')
   @SkipThrottle({ user: true })
-  @RequireAccessLevel(AccessLevel.VIEWER)
+  @RequireAccessLevel(AccessLevel.OPERATOR)
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.machinesService.findOne(id);
   }
