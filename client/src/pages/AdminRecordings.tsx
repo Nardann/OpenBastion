@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Video, X, ChevronLeft, ChevronRight, Pin } from 'lucide-react';
+import { Video, X, ChevronLeft, ChevronRight, Pin, Monitor, Terminal } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LangContext';
 import AsciinemaPlayer from '../components/AsciinemaPlayer';
+import GuacamolePlayer from '../components/GuacamolePlayer';
 
 interface Recording {
   id: string;
@@ -15,6 +16,7 @@ interface Recording {
   startedAt: string;
   endedAt: string | null;
   pinned: boolean;
+  protocol: string;
   user: { id: string; email: string; username: string | null } | null;
 }
 
@@ -97,11 +99,20 @@ const AdminRecordings: React.FC = () => {
               </button>
             </div>
             <div className="p-4">
-              <AsciinemaPlayer
-                castUrl={`/api/recordings/${selected.id}/stream`}
-                hudUser={selected.user?.username ?? selected.user?.email ?? undefined}
-                hudMachine={selected.machineName ?? undefined}
-              />
+              {selected.protocol === 'rdp' ? (
+                <GuacamolePlayer
+                  streamUrl={`/api/recordings/${selected.id}/stream`}
+                  hudUser={selected.user?.username ?? selected.user?.email ?? undefined}
+                  hudMachine={selected.machineName ?? undefined}
+                  startedAt={selected.startedAt}
+                />
+              ) : (
+                <AsciinemaPlayer
+                  castUrl={`/api/recordings/${selected.id}/stream`}
+                  hudUser={selected.user?.username ?? selected.user?.email ?? undefined}
+                  hudMachine={selected.machineName ?? undefined}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -114,6 +125,7 @@ const AdminRecordings: React.FC = () => {
               <th className="px-4 py-3 text-left">{t('history.col.session')}</th>
               <th className="px-4 py-3 text-left">{t('adminRecordings.colUser')}</th>
               <th className="px-4 py-3 text-left">{t('history.col.machine')}</th>
+              <th className="px-4 py-3 text-left">{t('adminRecordings.colProtocol')}</th>
               <th className="px-4 py-3 text-left">{t('history.col.start')}</th>
               <th className="px-4 py-3 text-left">{t('history.col.end')}</th>
               <th className="px-4 py-3 text-left">{t('history.col.size')}</th>
@@ -123,14 +135,14 @@ const AdminRecordings: React.FC = () => {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-text-secondary">
+                <td colSpan={8} className="px-4 py-8 text-center text-text-secondary">
                   {t('common.loading')}
                 </td>
               </tr>
             )}
             {!loading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-text-secondary">
+                <td colSpan={8} className="px-4 py-8 text-center text-text-secondary">
                   {t('history.empty')}
                 </td>
               </tr>
@@ -147,6 +159,16 @@ const AdminRecordings: React.FC = () => {
                   {rec.user?.username ?? rec.user?.email ?? rec.userId.slice(0, 8) + '…'}
                 </td>
                 <td className="px-4 py-3 text-text-main">{rec.machineName ?? rec.machineId.slice(0, 8) + '…'}</td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                    rec.protocol === 'rdp'
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'bg-green-500/20 text-green-400'
+                  }`}>
+                    {rec.protocol === 'rdp' ? <Monitor size={10} /> : <Terminal size={10} />}
+                    {rec.protocol?.toUpperCase() ?? 'SSH'}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-text-secondary">{fmt(rec.startedAt)}</td>
                 <td className="px-4 py-3 text-text-secondary">
                   {rec.endedAt ? fmt(rec.endedAt) : <span className="t-eyebrow-ambre">{t('history.inProgress')}</span>}

@@ -86,6 +86,7 @@ export class RecordingController {
           startedAt: true,
           endedAt: true,
           pinned: true,
+          protocol: true,
         },
       }),
     ]);
@@ -155,10 +156,20 @@ export class RecordingController {
       AuditCategory.TERMINAL,
     );
 
-    res.setHeader('Content-Type', 'application/x-asciicast');
+    const contentType = (rec as any).protocol === 'rdp'
+      ? 'application/octet-stream'
+      : 'application/x-asciicast';
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'no-store');
 
     const fileStream = fs.createReadStream(rec.filePath);
+    fileStream.on('error', (err) => {
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Failed to read recording file', detail: err.message });
+      } else {
+        res.destroy();
+      }
+    });
     fileStream.pipe(res);
   }
 

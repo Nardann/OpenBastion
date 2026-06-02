@@ -71,4 +71,24 @@ export class SettingsController {
     await this.settings.clearRecordingRetention();
     return { value: null, unit: null };
   }
+
+  // ── Recording enabled flags ───────────────────────────────────────────────
+
+  @Get('recording-enabled')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @SkipThrottle({ user: true })
+  getRecordingEnabled() {
+    return this.settings.getRecordingEnabledSettings();
+  }
+
+  @Patch('recording-enabled')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  async setRecordingEnabled(@Body() body: { protocol: 'ssh' | 'rdp'; enabled: boolean }) {
+    if (!['ssh', 'rdp'].includes(body.protocol)) throw new BadRequestException('Invalid protocol');
+    if (typeof body.enabled !== 'boolean') throw new BadRequestException('enabled must be boolean');
+    await this.settings.setRecordingEnabled(body.protocol, body.enabled);
+    return this.settings.getRecordingEnabledSettings();
+  }
 }

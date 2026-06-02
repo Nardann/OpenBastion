@@ -70,7 +70,6 @@ const AdminMachines = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const [selectedMachineToAdd, setSelectedMachineToAdd] = useState('');
-  const [rdpEnabled, setRdpEnabled] = useState(false);
 
   const fetchMachines = async () => {
     try {
@@ -106,7 +105,6 @@ const AdminMachines = () => {
 
   useEffect(() => {
     fetchData();
-    api.get('/features').then(res => setRdpEnabled((res.data as any).rdp === true)).catch(() => {});
   }, [activeTab]);
 
   useEffect(() => {
@@ -771,13 +769,8 @@ const AdminMachines = () => {
                     }}
                   >
                     <option value="SSH">SSH</option>
-                    {rdpEnabled && <option value="RDP">RDP</option>}
+                    <option value="RDP">RDP</option>
                   </select>
-                  {!rdpEnabled && (
-                    <p className="text-[9px] text-text-secondary ml-1 mt-1">
-                      {t('adminMachines.modal.rdpDisabled')}
-                    </p>
-                  )}
                 </div>
                 <div className="space-y-2">
                   <label className="t-eyebrow ml-1">{t('adminMachines.modal.inventoryGroup')}</label>

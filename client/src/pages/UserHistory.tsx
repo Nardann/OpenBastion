@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LangContext';
 import api from '../services/api';
 import AsciinemaPlayer from '../components/AsciinemaPlayer';
+import GuacamolePlayer from '../components/GuacamolePlayer';
 
 interface Recording {
   id: string;
@@ -14,6 +15,7 @@ interface Recording {
   sizeBytes: number;
   startedAt: string;
   endedAt: string | null;
+  protocol: string;
 }
 
 interface PageData {
@@ -91,11 +93,20 @@ const UserHistory: React.FC = () => {
                 </button>
               </div>
               <div className="p-4">
-                <AsciinemaPlayer
-                  castUrl={`/api/recordings/${selected.id}/stream`}
-                  hudUser={user?.username ?? user?.email ?? undefined}
-                  hudMachine={selected.machineName ?? undefined}
-                />
+                {selected.protocol === 'rdp' ? (
+                  <GuacamolePlayer
+                    streamUrl={`/api/recordings/${selected.id}/stream`}
+                    hudUser={user?.username ?? user?.email ?? undefined}
+                    hudMachine={selected.machineName ?? undefined}
+                    startedAt={selected.startedAt}
+                  />
+                ) : (
+                  <AsciinemaPlayer
+                    castUrl={`/api/recordings/${selected.id}/stream`}
+                    hudUser={user?.username ?? user?.email ?? undefined}
+                    hudMachine={selected.machineName ?? undefined}
+                  />
+                )}
               </div>
             </div>
           </div>

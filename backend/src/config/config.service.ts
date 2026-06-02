@@ -16,8 +16,4 @@ export class ConfigService {
     if (!value) throw new Error(`Env var "${key}" is required but not set`);
     return value;
   }
-
-  isRdpEnabled(): boolean {
-    return process.env.ENABLE_RDP?.toLowerCase() === 'true';
-  }
 }

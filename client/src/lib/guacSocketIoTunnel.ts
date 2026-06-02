@@ -11,8 +11,13 @@ import type { Socket } from 'socket.io-client';
  *   - `resize`         (client -> server) : triggers a guacd size instruction
  *   - `error` / `closed` / `ready`       : lifecycle signals
  *
- * We subclass Guacamole.Tunnel so Guacamole.Client can treat it like any
- * other tunnel (WebSocketTunnel, HTTPTunnel, ...).
+ * IMPORTANT: `Guacamole.Tunnel` is a legacy function-constructor that assigns
+ * `connect`, `disconnect`, `sendMessage` as OWN PROPERTIES on `this` inside its
+ * body. Subclassing with ES6 `class extends` would put our methods on the
+ * prototype where the parent's own-property stubs shadow them at lookup time,
+ * so the methods would never be called. We mirror the pattern used by the
+ * built-in HTTPTunnel/WebSocketTunnel: assign the overrides on `this` from
+ * within the constructor, after `super()`.
  */
 export interface StartSessionPayload {
   machineId: string;
@@ -21,76 +26,65 @@ export interface StartSessionPayload {
 }
 
 export class SocketIoTunnel extends Guacamole.Tunnel {
-  private parser = new Guacamole.Parser();
-  private socket: Socket;
-  private startPayload: StartSessionPayload;
-
   constructor(socket: Socket, startPayload: StartSessionPayload) {
     super();
-    this.socket = socket;
-    this.startPayload = startPayload;
 
-    // Forward parsed instructions up to Guacamole.Client.
-    this.parser.oninstruction = (opcode: string, args: string[]) => {
+    const parser = new Guacamole.Parser();
+    parser.oninstruction = (opcode: string, args: string[]) => {
       if (this.oninstruction) this.oninstruction(opcode, args);
     };
 
-    this.socket.on('data', (chunk: string) => {
+    const fail = (message: string) => {
+      if (this.onerror) {
+        this.onerror(
+          new Guacamole.Status(Guacamole.Status.Code.SERVER_ERROR, message),
+        );
+      }
+      this.setState(Guacamole.Tunnel.State.CLOSED);
+    };
+
+    socket.on('data', (chunk: string) => {
       try {
-        this.parser.receive(chunk);
-      } catch (err) {
-        this.fail('Protocol parse error');
+        parser.receive(chunk);
+      } catch {
+        fail('Protocol parse error');
       }
     });
 
-    this.socket.on('ready', () => {
+    socket.on('ready', () => {
       this.setState(Guacamole.Tunnel.State.OPEN);
     });
 
-    this.socket.on('error', (message: string) => {
-      this.fail(message || 'Tunnel error');
+    socket.on('error', (message: string) => {
+      fail(message || 'Tunnel error');
     });
 
-    this.socket.on('closed', () => {
+    socket.on('closed', () => {
       this.setState(Guacamole.Tunnel.State.CLOSED);
     });
 
-    this.socket.on('disconnect', () => {
+    socket.on('disconnect', () => {
       this.setState(Guacamole.Tunnel.State.CLOSED);
     });
-  }
 
-  /** Called by Guacamole.Client on first connect. */
-  connect(_data?: string): void {
-    this.setState(Guacamole.Tunnel.State.CONNECTING);
-    this.socket.emit('start-session', this.startPayload);
-  }
+    // Override the parent's empty stubs on the instance — see class doc above.
+    this.connect = (_data?: string): void => {
+      this.setState(Guacamole.Tunnel.State.CONNECTING);
+      socket.emit('start-session', startPayload);
+    };
 
-  disconnect(): void {
-    this.socket.disconnect();
-    this.setState(Guacamole.Tunnel.State.CLOSED);
-  }
+    this.disconnect = (): void => {
+      socket.disconnect();
+      this.setState(Guacamole.Tunnel.State.CLOSED);
+    };
 
-  /**
-   * Called by Guacamole.Client to emit input (mouse, keyboard, size, ...)
-   * towards the remote RDP host.
-   */
-  sendMessage(...elements: unknown[]): void {
-    // First element is opcode, rest are args. Encode using length.value syntax.
-    const parts = elements.map((el) => {
-      const s = String(el ?? '');
-      return `${s.length}.${s}`;
-    });
-    const instr = parts.join(',') + ';';
-    this.socket.emit('data', instr);
-  }
-
-  private fail(message: string) {
-    if (this.onerror) {
-      this.onerror(
-        new Guacamole.Status(Guacamole.Status.Code.SERVER_ERROR, message),
-      );
-    }
-    this.setState(Guacamole.Tunnel.State.CLOSED);
+    this.sendMessage = (...elements: unknown[]): void => {
+      const parts = elements.map((el) => {
+        const s = String(el ?? '');
+        return `${s.length}.${s}`;
+      });
+      const instr = parts.join(',') + ';';
+      socket.emit('data', instr);
+    };
   }
 }
