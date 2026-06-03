@@ -265,7 +265,6 @@ const fr = {
       userSearch: "Email ou nom d'utilisateur...",
       groupSearch: "Nom du groupe...",
       level: "Niveau d'accès",
-      viewer: "LECTURE",
       operator: "ACCÈS",
       owner: "GESTION",
       grant: "Accorder",

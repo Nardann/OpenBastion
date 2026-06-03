@@ -265,7 +265,6 @@ const en = {
       userSearch: "Email or username...",
       groupSearch: "Group name...",
       level: "Access level",
-      viewer: "READ",
       operator: "ACCESS",
       owner: "MANAGE",
       grant: "Grant",

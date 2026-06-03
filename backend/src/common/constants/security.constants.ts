@@ -24,16 +24,9 @@ export const OTP_LOCKOUT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes base window
 export const OTP_BACKOFF_BASE_MS = 30_000; // 30 seconds
 export const OTP_BACKOFF_MAX_MS = 30 * 60 * 1000; // 30 minutes cap
 
-// Rate Limiting Constants
-export const THROTTLE_GLOBAL_TTL = Number(process.env.THROTTLE_GLOBAL_TTL || 1000);
-export const THROTTLE_GLOBAL_LIMIT = Number(process.env.THROTTLE_GLOBAL_LIMIT || 20);
-
+// Rate Limiting Constants — scoped to authentication only. Logged-in users are
+// not throttled (see UserThrottlerGuard); these caps protect the auth surface
+// (login / OTP / sudo / refresh) against brute force.
 export const THROTTLE_AUTH_TTL = Number(process.env.THROTTLE_AUTH_TTL || 900000); // 15 mins
 export const THROTTLE_AUTH_LIMIT = Number(process.env.THROTTLE_AUTH_LIMIT || 20);
-
-// Per-user rate limits (requests per minute)
-export const THROTTLE_USER_TTL = 60_000;
-export const THROTTLE_USER_LIMIT_ADMIN = 300;
-export const THROTTLE_USER_LIMIT_USER = 100;
-export const THROTTLE_USER_LIMIT_ANON = 30;
 
